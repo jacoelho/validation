@@ -165,3 +165,25 @@ func MapsKeysDisallowed[K comparable, V any](disallowed ...K) MapRule[K, V] {
 		return nil
 	}
 }
+
+// MapsKey validates the value of the given key.
+func MapsKey[K comparable, V any](key K, rules ...Rule[V]) MapRule[K, V] {
+	return func(m map[K]V) Errors {
+		v, ok := m[key]
+		if !ok {
+			return NewErrors("", "not_found", map[string]any{"key": key}, false)
+		}
+		var errs Errors
+		for _, rule := range rules {
+			err := rule(v)
+			if err != nil {
+				err.Field = fmt.Sprintf("%v", key)
+				errs = append(errs, err)
+				if err.Fatal {
+					return errs
+				}
+			}
+		}
+		return errs
+	}
+}

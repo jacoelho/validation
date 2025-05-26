@@ -168,19 +168,26 @@ validation.SlicesForEach(
 ### Map Validation
 
 ```go
-validation.MapsMinKeys[string, string](1)               // Minimum keys
-validation.MapsMaxKeys[string, string](10)              // Maximum keys
-validation.MapsLength[string, string](5)                // Exact key count
-validation.MapsLengthBetween[string, string](1, 10)     // Key count range
-validation.MapsKeysAllowed[string, string]("a", "b")    // Key whitelist
-validation.MapsKeysDisallowed[string, string]("x")      // Key blacklist
-validation.MapsValuesAllowed[string, string]("y", "z")  // Value whitelist
-validation.MapsValuesDisallowed[string, string]("bad")  // Value blacklist
+// Map validation rules
+validation.MapsMinKeys[string, string](1)               // Minimum number of keys
+validation.MapsMaxKeys[string, string](10)              // Maximum number of keys
+validation.MapsLength[string, string](5)                // Exact number of keys
+validation.MapsLengthBetween[string, string](1, 10)     // Range of key count
+validation.MapsKey[string, string]("key",               // Validate specific key
+    validation.StringsNotEmpty[string](),
+)
+validation.MapsKeysAllowed[string, string]("a", "b")    // Allowed keys
+validation.MapsKeysDisallowed[string, string]("x")      // Disallowed keys
+validation.MapsValuesAllowed[string, string]("y", "z")  // Allowed values
+validation.MapsValuesDisallowed[string, string]("bad")  // Disallowed values
 
 // Validate each key-value pair
 validation.MapsForEach(func(key, value string) *validation.Error {
     if value == "" {
-        return &validation.Error{Code: "empty_value"}
+        return &validation.Error{
+            Code:   "empty_value",
+            Params: map[string]any{"key": key},
+        }
     }
     return nil
 })

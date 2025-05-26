@@ -96,7 +96,7 @@ func StringsAllowed[T ~string](allowed ...T) Rule[T] {
 	return func(value T) *Error {
 		if _, ok := allowedSet[value]; !ok {
 			return &Error{
-				Code:   "allowed",
+				Code:   "not_allowed",
 				Params: map[string]any{"value": value},
 			}
 		}

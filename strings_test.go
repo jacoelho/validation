@@ -405,19 +405,19 @@ func TestStringsAllowed(t *testing.T) {
 			name:    "disallowed value should fail",
 			value:   "superuser",
 			wantErr: true,
-			errCode: "allowed",
+			errCode: "not_allowed",
 		},
 		{
 			name:    "empty string should fail",
 			value:   "",
 			wantErr: true,
-			errCode: "allowed",
+			errCode: "not_allowed",
 		},
 		{
 			name:    "case sensitive check should fail",
 			value:   "Admin",
 			wantErr: true,
-			errCode: "allowed",
+			errCode: "not_allowed",
 		},
 	}
 
@@ -590,8 +590,8 @@ func TestStringsErrorParams(t *testing.T) {
 			t.Fatal("expected error but got nil")
 		}
 
-		if err.Code != "allowed" {
-			t.Errorf("expected code 'allowed', got %q", err.Code)
+		if err.Code != "not_allowed" {
+			t.Errorf("expected code 'not_allowed', got %q", err.Code)
 		}
 
 		if err.Params["value"] != "d" {
