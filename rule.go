@@ -87,3 +87,37 @@ func RequiredZeroable[T interface{ IsZero() bool }]() Rule[T] {
 		return nil
 	}
 }
+
+// Allowed validates that the value is one of the given allowed values.
+func Allowed[T comparable](allowed ...T) Rule[T] {
+	allowedSet := make(map[T]struct{}, len(allowed))
+	for _, v := range allowed {
+		allowedSet[v] = struct{}{}
+	}
+	return func(value T) *Error {
+		if _, ok := allowedSet[value]; !ok {
+			return &Error{
+				Code:   "not_allowed",
+				Params: map[string]any{"value": value},
+			}
+		}
+		return nil
+	}
+}
+
+// Disallowed validates that the value is not one of the given disallowed values.
+func Disallowed[T comparable](disallowed ...T) Rule[T] {
+	disallowedSet := make(map[T]struct{}, len(disallowed))
+	for _, v := range disallowed {
+		disallowedSet[v] = struct{}{}
+	}
+	return func(value T) *Error {
+		if _, ok := disallowedSet[value]; ok {
+			return &Error{
+				Code:   "disallowed",
+				Params: map[string]any{"value": value},
+			}
+		}
+		return nil
+	}
+}

@@ -86,37 +86,3 @@ func StringsContains[T ~string](substring T) Rule[T] {
 		return nil
 	}
 }
-
-// StringsAllowed validates that the string is one of the given allowed values.
-func StringsAllowed[T ~string](allowed ...T) Rule[T] {
-	allowedSet := make(map[T]struct{}, len(allowed))
-	for _, v := range allowed {
-		allowedSet[v] = struct{}{}
-	}
-	return func(value T) *Error {
-		if _, ok := allowedSet[value]; !ok {
-			return &Error{
-				Code:   "not_allowed",
-				Params: map[string]any{"value": value},
-			}
-		}
-		return nil
-	}
-}
-
-// StringsDisallowed validates that the string is not one of the given disallowed values.
-func StringsDisallowed[T ~string](disallowed ...T) Rule[T] {
-	disallowedSet := make(map[T]struct{}, len(disallowed))
-	for _, v := range disallowed {
-		disallowedSet[v] = struct{}{}
-	}
-	return func(value T) *Error {
-		if _, ok := disallowedSet[value]; ok {
-			return &Error{
-				Code:   "disallowed",
-				Params: map[string]any{"value": value},
-			}
-		}
-		return nil
-	}
-}

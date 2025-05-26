@@ -101,8 +101,10 @@ type Error struct {
 
 ```go
 // Basic validation
-validation.Required[string]()                    // Not zero value
-validation.RequiredZeroable[time.Time]()         // For types with IsZero() method
+validation.Required[string]()                          // Not zero value
+validation.RequiredZeroable[time.Time]()               // For types with IsZero() method
+validation.Allowed[string]("admin", "user", "guest")   // Whitelist
+validation.Disallowed[string]("root", "admin")         // Blacklist
 
 // Logical operators
 validation.RuleNot(validation.Required[string]()) // Negate a rule
@@ -123,8 +125,6 @@ validation.StringsRuneMaxLength[string](100)                   // Max rune lengt
 validation.StringsRuneLengthBetween[string](5, 100)           // Length range
 validation.StringsMatchesRegex[string](`^\w+@\w+\.\w+$`)      // Regex pattern
 validation.StringsContains[string]("@")                       // Contains substring
-validation.StringsAllowed[string]("admin", "user", "guest")   // Whitelist
-validation.StringsDisallowed[string]("root", "admin")         // Blacklist
 ```
 
 ### Numeric Validation
@@ -456,7 +456,7 @@ type User struct {
 
 validator := validation.Struct(
     validation.Field("Type", func(u User) string { return u.Type },
-        validation.StringsAllowed[string]("basic", "premium"),
+        validation.Allowed[string]("basic", "premium"),
     ),
     
     // Require credit card for premium users

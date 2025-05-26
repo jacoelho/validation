@@ -1,6 +1,7 @@
 package validation_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -616,6 +617,173 @@ func TestRuleTypes(t *testing.T) {
 		}
 		if err := floatRule(3.14); err != nil {
 			t.Error("expected non-zero float to pass")
+		}
+	})
+}
+
+func TestAllowed(t *testing.T) {
+	tests := []struct {
+		name      string
+		allowed   []string
+		value     string
+		wantErr   bool
+		errCode   string
+		errParams map[string]any
+	}{
+		{
+			name:    "value in allowed list",
+			allowed: []string{"a", "b", "c"},
+			value:   "b",
+			wantErr: false,
+		},
+		{
+			name:      "value not in allowed list",
+			allowed:   []string{"a", "b", "c"},
+			value:     "d",
+			wantErr:   true,
+			errCode:   "not_allowed",
+			errParams: map[string]any{"value": "d"},
+		},
+		{
+			name:      "empty allowed list",
+			allowed:   []string{},
+			value:     "any",
+			wantErr:   true,
+			errCode:   "not_allowed",
+			errParams: map[string]any{"value": "any"},
+		},
+		{
+			name:    "empty value in allowed list",
+			allowed: []string{"", "a", "b"},
+			value:   "",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule := validation.Allowed(tt.allowed...)
+			err := rule(tt.value)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+					return
+				}
+				if err.Code != tt.errCode {
+					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
+				}
+				if !reflect.DeepEqual(err.Params, tt.errParams) {
+					t.Errorf("expected error params %v, got %v", tt.errParams, err.Params)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+
+	t.Run("different types", func(t *testing.T) {
+		// Test with integers
+		intRule := validation.Allowed(1, 2, 3)
+		if err := intRule(2); err != nil {
+			t.Errorf("unexpected error for valid integer: %v", err)
+		}
+		if err := intRule(4); err == nil {
+			t.Error("expected error for invalid integer, got nil")
+		}
+
+		type Status string
+		statusRule := validation.Allowed(Status("active"), Status("inactive"))
+		if err := statusRule(Status("active")); err != nil {
+			t.Errorf("unexpected error for valid status: %v", err)
+		}
+		if err := statusRule(Status("pending")); err == nil {
+			t.Error("expected error for invalid status, got nil")
+		}
+	})
+}
+
+func TestDisallowed(t *testing.T) {
+	tests := []struct {
+		name       string
+		disallowed []string
+		value      string
+		wantErr    bool
+		errCode    string
+		errParams  map[string]any
+	}{
+		{
+			name:       "value not in disallowed list",
+			disallowed: []string{"a", "b", "c"},
+			value:      "d",
+			wantErr:    false,
+		},
+		{
+			name:       "value in disallowed list",
+			disallowed: []string{"a", "b", "c"},
+			value:      "b",
+			wantErr:    true,
+			errCode:    "disallowed",
+			errParams:  map[string]any{"value": "b"},
+		},
+		{
+			name:       "empty disallowed list",
+			disallowed: []string{},
+			value:      "any",
+			wantErr:    false,
+		},
+		{
+			name:       "empty value in disallowed list",
+			disallowed: []string{"", "a", "b"},
+			value:      "",
+			wantErr:    true,
+			errCode:    "disallowed",
+			errParams:  map[string]any{"value": ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule := validation.Disallowed(tt.disallowed...)
+			err := rule(tt.value)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+					return
+				}
+				if err.Code != tt.errCode {
+					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
+				}
+				if !reflect.DeepEqual(err.Params, tt.errParams) {
+					t.Errorf("expected error params %v, got %v", tt.errParams, err.Params)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+
+	t.Run("different types", func(t *testing.T) {
+		intRule := validation.Disallowed(1, 2, 3)
+		if err := intRule(4); err != nil {
+			t.Errorf("unexpected error for valid integer: %v", err)
+		}
+		if err := intRule(2); err == nil {
+			t.Error("expected error for invalid integer, got nil")
+		}
+
+		type Status string
+		statusRule := validation.Disallowed(Status("invalid"), Status("error"))
+		if err := statusRule(Status("active")); err != nil {
+			t.Errorf("unexpected error for valid status: %v", err)
+		}
+		if err := statusRule(Status("invalid")); err == nil {
+			t.Error("expected error for invalid status, got nil")
 		}
 	})
 }
