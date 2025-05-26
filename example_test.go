@@ -56,7 +56,7 @@ func Example() {
 					return nil
 				},
 			),
-			validation.MapsKey("lang", validation.StringsAllowed("en", "fr")),
+			validation.MapsKey("lang", validation.Allowed("en", "fr")),
 		),
 	)
 
