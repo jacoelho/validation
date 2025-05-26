@@ -586,3 +586,138 @@ func TestMapsErrorParams(t *testing.T) {
 		}
 	})
 }
+
+func TestMapsKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		key      string
+		rules    []validation.Rule[string]
+		input    map[string]string
+		wantErr  bool
+		errCode  string
+		errField string
+	}{
+		{
+			name:     "key not found",
+			key:      "missing",
+			rules:    []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			input:    map[string]string{"existing": "value"},
+			wantErr:  true,
+			errCode:  "not_found",
+			errField: "",
+		},
+		{
+			name:     "key found, value valid",
+			key:      "name",
+			rules:    []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			input:    map[string]string{"name": "John"},
+			wantErr:  false,
+			errCode:  "",
+			errField: "",
+		},
+		{
+			name:     "key found, value invalid",
+			key:      "name",
+			rules:    []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			input:    map[string]string{"name": ""},
+			wantErr:  true,
+			errCode:  "not_empty",
+			errField: "",
+		},
+		{
+			name: "multiple rules, all pass",
+			key:  "name",
+			rules: []validation.Rule[string]{
+				validation.StringsNotEmpty[string](),
+				validation.StringsRuneMaxLength[string](10),
+			},
+			input:    map[string]string{"name": "John"},
+			wantErr:  false,
+			errCode:  "",
+			errField: "",
+		},
+		{
+			name: "multiple rules, first fails",
+			key:  "name",
+			rules: []validation.Rule[string]{
+				validation.StringsNotEmpty[string](),
+				validation.StringsRuneMaxLength[string](10),
+			},
+			input:    map[string]string{"name": ""},
+			wantErr:  true,
+			errCode:  "not_empty",
+			errField: "",
+		},
+		{
+			name: "multiple rules, second fails",
+			key:  "name",
+			rules: []validation.Rule[string]{
+				validation.StringsNotEmpty[string](),
+				validation.StringsRuneMaxLength[string](3),
+			},
+			input:    map[string]string{"name": "John"},
+			wantErr:  true,
+			errCode:  "max",
+			errField: "",
+		},
+		{
+			name: "fatal error stops validation",
+			key:  "name",
+			rules: []validation.Rule[string]{
+				validation.RuleStopOnError(validation.StringsNotEmpty[string]()),
+				validation.StringsRuneMaxLength[string](3),
+			},
+			input:    map[string]string{"name": ""},
+			wantErr:  true,
+			errCode:  "not_empty",
+			errField: "",
+		},
+		{
+			name: "custom rule",
+			key:  "status",
+			rules: []validation.Rule[string]{
+				func(value string) *validation.Error {
+					if value != "active" && value != "inactive" {
+						return &validation.Error{
+							Code:   "invalid_status",
+							Params: map[string]any{"value": value},
+						}
+					}
+					return nil
+				},
+			},
+			input:    map[string]string{"status": "pending"},
+			wantErr:  true,
+			errCode:  "invalid_status",
+			errField: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule := validation.MapsKey(tt.key, tt.rules...)
+			err := rule(tt.input)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+					return
+				}
+				if len(err) == 0 {
+					t.Error("expected error, got empty slice")
+					return
+				}
+				if err[0].Code != tt.errCode {
+					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
+				}
+				if tt.errField != "" && err[0].Field != tt.errField {
+					t.Errorf("expected error field %q, got %q", tt.errField, err[0].Field)
+				}
+			} else {
+				if len(err) > 0 {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}

@@ -66,6 +66,9 @@ func (errs Errors) HasErrors() bool {
 
 // HasFatalErrors reports whether any fatal errors exist.
 func (errs Errors) HasFatalErrors() bool {
+	if len(errs) == 0 {
+		return false
+	}
 	for _, e := range errs {
 		if e.Fatal {
 			return true
