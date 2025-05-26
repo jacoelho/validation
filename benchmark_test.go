@@ -16,7 +16,7 @@ func BenchmarkValidation(b *testing.B) {
 		Settings map[string]string
 	}
 
-	validator := validation.NewStruct(
+	validator := validation.Struct(
 		validation.Field("Name", func(u User) string { return u.Name },
 			validation.StringsNotEmpty[string](),
 			validation.StringsRuneMaxLength[string](50),

@@ -18,7 +18,7 @@ func Example() {
 	}
 
 	// Create a validator for the User struct
-	validator := validation.NewStruct(
+	validator := validation.Struct(
 		validation.Field("Name", func(u User) string { return u.Name },
 			validation.StringsNotEmpty[string](),
 			validation.StringsRuneMaxLength[string](50),

@@ -22,7 +22,7 @@ type Address struct {
 }
 
 func TestStructValidation(t *testing.T) {
-	validator := validation.NewStruct(
+	validator := validation.Struct(
 		validation.Field("Name", func(u User) string { return u.Name },
 			validation.StringsNotEmpty[string](),
 			validation.StringsRuneMaxLength[string](50),
@@ -36,7 +36,7 @@ func TestStructValidation(t *testing.T) {
 			validation.StringsRuneMaxLength[string](100),
 		),
 		validation.StructField("Address", func(u User) Address { return u.Address },
-			validation.NewStruct(
+			validation.Struct(
 				validation.Field("Street", func(a Address) string { return a.Street },
 					validation.StringsNotEmpty[string](),
 				),
@@ -212,7 +212,7 @@ func TestStructValidation(t *testing.T) {
 }
 
 func TestStructValidationWithPrefix(t *testing.T) {
-	validator := validation.NewStruct(
+	validator := validation.Struct(
 		validation.Field("Name", func(u User) string { return u.Name },
 			validation.StringsNotEmpty[string](),
 		),
@@ -280,17 +280,17 @@ func TestNestedStructValidation(t *testing.T) {
 		Company Company
 	}
 
-	validator := validation.NewStruct(
+	validator := validation.Struct(
 		validation.Field("Name", func(e Employee) string { return e.Name },
 			validation.StringsNotEmpty[string](),
 		),
 		validation.StructField("Company", func(e Employee) Company { return e.Company },
-			validation.NewStruct(
+			validation.Struct(
 				validation.Field("Name", func(c Company) string { return c.Name },
 					validation.StringsNotEmpty[string](),
 				),
 				validation.StructField("Address", func(c Company) Address { return c.Address },
-					validation.NewStruct(
+					validation.Struct(
 						validation.Field("Street", func(a Address) string { return a.Street },
 							validation.StringsNotEmpty[string](),
 						),
@@ -388,7 +388,7 @@ func TestNestedStructValidation(t *testing.T) {
 }
 
 func TestStructValidationWithFatalErrors(t *testing.T) {
-	validator := validation.NewStruct(
+	validator := validation.Struct(
 		validation.Field("Name", func(u User) string { return u.Name },
 			validation.StringsNotEmpty[string](),
 		),

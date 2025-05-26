@@ -36,7 +36,7 @@ type User struct {
 }
 
 func main() {
-    validator := validation.NewStruct(
+    validator := validation.Struct(
         validation.Field("Name", 
             func(u User) string { return u.Name },
             validation.Required[string](),
@@ -196,7 +196,7 @@ type Person struct {
     Age  int
 }
 
-validator := validation.NewStruct(
+validator := validation.Struct(
     validation.Field("Name", 
         func(p Person) string { return p.Name },
         validation.Required[string](),
@@ -230,7 +230,7 @@ type User struct {
 }
 
 // Create address validator
-addressValidator := validation.NewStruct(
+addressValidator := validation.Struct(
     validation.Field("Street", func(a Address) string { return a.Street },
         validation.Required[string](),
         validation.StringsRuneMinLength[string](5),
@@ -246,7 +246,7 @@ addressValidator := validation.NewStruct(
 )
 
 // Create user validator with nested address
-userValidator := validation.NewStruct(
+userValidator := validation.Struct(
     validation.Field("Name", func(u User) string { return u.Name },
         validation.Required[string](),
     ),
@@ -286,7 +286,7 @@ type User struct {
     Settings map[string]string
 }
 
-validator := validation.NewStruct(
+validator := validation.Struct(
     validation.Field("Name", func(u User) string { return u.Name },
         validation.Required[string](),
     ),
@@ -447,7 +447,7 @@ type User struct {
     BankAccount string
 }
 
-validator := validation.NewStruct(
+validator := validation.Struct(
     validation.Field("Type", func(u User) string { return u.Type },
         validation.StringsAllowed[string]("basic", "premium"),
     ),
@@ -520,7 +520,7 @@ var (
     }
 )
 
-userValidator := validation.NewStruct(
+userValidator := validation.Struct(
     validation.Field("Email", func(u User) string { return u.Email }, emailRules...),
     validation.Field("Password", func(u User) string { return u.Password }, passwordRules...),
 )
