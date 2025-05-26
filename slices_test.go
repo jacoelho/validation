@@ -1,6 +1,7 @@
 package validation_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/jacoelho/validation"
@@ -582,6 +583,183 @@ func TestSlicesErrorParams(t *testing.T) {
 
 		if err[0].Params["actual"] != 1 {
 			t.Errorf("expected actual param to be 1, got %v", err[0].Params["actual"])
+		}
+	})
+}
+
+func TestSlicesAtIndex(t *testing.T) {
+	tests := []struct {
+		name      string
+		index     int
+		rules     []validation.Rule[string]
+		input     []string
+		wantErr   bool
+		errCode   string
+		errField  string
+		errParams map[string]any
+	}{
+		{
+			name:    "valid index, valid value",
+			index:   1,
+			rules:   []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			input:   []string{"a", "b", "c"},
+			wantErr: false,
+		},
+		{
+			name:     "valid index, invalid value",
+			index:    1,
+			rules:    []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			input:    []string{"a", "", "c"},
+			wantErr:  true,
+			errCode:  "not_empty",
+			errField: "1",
+		},
+		{
+			name:      "negative index",
+			index:     -1,
+			rules:     []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			input:     []string{"a", "b", "c"},
+			wantErr:   true,
+			errCode:   "index",
+			errField:  "-1",
+			errParams: map[string]any{"index": -1},
+		},
+		{
+			name:      "index out of bounds",
+			index:     3,
+			rules:     []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			input:     []string{"a", "b", "c"},
+			wantErr:   true,
+			errCode:   "index",
+			errField:  "3",
+			errParams: map[string]any{"index": 3},
+		},
+		{
+			name:  "multiple rules, all pass",
+			index: 1,
+			rules: []validation.Rule[string]{
+				validation.StringsNotEmpty[string](),
+				validation.StringsRuneMaxLength[string](10),
+			},
+			input:   []string{"a", "valid", "c"},
+			wantErr: false,
+		},
+		{
+			name:  "multiple rules, first fails",
+			index: 1,
+			rules: []validation.Rule[string]{
+				validation.StringsNotEmpty[string](),
+				validation.StringsRuneMaxLength[string](10),
+			},
+			input:    []string{"a", "", "c"},
+			wantErr:  true,
+			errCode:  "not_empty",
+			errField: "1",
+		},
+		{
+			name:  "multiple rules, second fails",
+			index: 1,
+			rules: []validation.Rule[string]{
+				validation.StringsNotEmpty[string](),
+				validation.StringsRuneMaxLength[string](3),
+			},
+			input:    []string{"a", "too long", "c"},
+			wantErr:  true,
+			errCode:  "max",
+			errField: "1",
+		},
+		{
+			name:  "fatal error stops validation",
+			index: 1,
+			rules: []validation.Rule[string]{
+				validation.RuleStopOnError(validation.StringsNotEmpty[string]()),
+				validation.StringsRuneMaxLength[string](3),
+			},
+			input:    []string{"a", "", "c"},
+			wantErr:  true,
+			errCode:  "not_empty",
+			errField: "1",
+		},
+		{
+			name:      "empty slice",
+			index:     0,
+			rules:     []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			input:     []string{},
+			wantErr:   true,
+			errCode:   "index",
+			errField:  "0",
+			errParams: map[string]any{"index": 0},
+		},
+		{
+			name:      "nil slice",
+			index:     0,
+			rules:     []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			input:     nil,
+			wantErr:   true,
+			errCode:   "index",
+			errField:  "0",
+			errParams: map[string]any{"index": 0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule := validation.SlicesAtIndex(tt.index, tt.rules...)
+			err := rule(tt.input)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+					return
+				}
+				if len(err) == 0 {
+					t.Error("expected error, got empty slice")
+					return
+				}
+				if err[0].Code != tt.errCode {
+					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
+				}
+				if err[0].Field != tt.errField {
+					t.Errorf("expected error field %q, got %q", tt.errField, err[0].Field)
+				}
+				if tt.errParams != nil && !reflect.DeepEqual(err[0].Params, tt.errParams) {
+					t.Errorf("expected error params %v, got %v", tt.errParams, err[0].Params)
+				}
+			} else {
+				if len(err) > 0 {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+
+	// Test with different types
+	t.Run("different types", func(t *testing.T) {
+		// Test with integers
+		intRule := validation.SlicesAtIndex(1, validation.NumbersMin(10))
+		if err := intRule([]int{5, 15, 20}); err != nil {
+			t.Errorf("unexpected error for valid integer: %v", err)
+		}
+		if err := intRule([]int{5, 8, 20}); err == nil {
+			t.Error("expected error for invalid integer, got nil")
+		}
+
+		// Test with custom type
+		type Status string
+		statusRule := validation.SlicesAtIndex(1, func(s Status) *validation.Error {
+			if s != Status("active") && s != Status("inactive") {
+				return &validation.Error{
+					Code:   "invalid_status",
+					Params: map[string]any{"value": string(s)},
+				}
+			}
+			return nil
+		})
+		if err := statusRule([]Status{"pending", "active", "inactive"}); err != nil {
+			t.Errorf("unexpected error for valid status: %v", err)
+		}
+		if err := statusRule([]Status{"pending", "invalid", "inactive"}); err == nil {
+			t.Error("expected error for invalid status, got nil")
 		}
 	})
 }

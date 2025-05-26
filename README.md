@@ -103,8 +103,8 @@ type Error struct {
 // Basic validation
 validation.Required[string]()                          // Not zero value
 validation.RequiredZeroable[time.Time]()               // For types with IsZero() method
-validation.Allowed[string]("admin", "user", "guest")   // Whitelist
-validation.Disallowed[string]("root", "admin")         // Blacklist
+validation.Allowed[string]("admin", "user", "guest")   // Allowed values
+validation.Disallowed[string]("root", "admin")         // Disallowed values
 
 // Logical operators
 validation.RuleNot(validation.Required[string]()) // Negate a rule
@@ -149,14 +149,16 @@ validation.TimeBetween(start, end)           // Between time range
 ### Slice Validation
 
 ```go
+notEmpty := validation.StringsNotEmpty[string]()
 validation.SlicesMinLength[string](1)                    // Minimum length
 validation.SlicesMaxLength[string](10)                   // Maximum length
 validation.SlicesLength[string](5)                       // Exact length
 validation.SlicesInBetweenLength[string](1, 10)         // Length range
 validation.SlicesUnique[string]()                       // All elements unique
 validation.SlicesContains[string]("required")           // Contains value
-validation.SlicesAllowed[string]("a", "b", "c")         // Element whitelist
-validation.SlicesDisallowed[string]("x", "y")           // Element blacklist
+validation.SlicesAllowed[string]("a", "b", "c")         // Element allowed values
+validation.SlicesDisallowed[string]("x", "y")           // Element disallowed values
+validation.SlicesAtIndex(1, notEmpty)                   // Element at index 
 
 // Validate each element
 validation.SlicesForEach(
