@@ -15,8 +15,8 @@ type MapValidator[K comparable, V any] struct {
 	rules []MapRule[K, V]
 }
 
-// NewMapValidator creates a new MapValidator with the given rules.
-func NewMapValidator[K comparable, V any](rules ...MapRule[K, V]) *MapValidator[K, V] {
+// Maps creates a new MapValidator with the given rules.
+func Maps[K comparable, V any](rules ...MapRule[K, V]) *MapValidator[K, V] {
 	return &MapValidator[K, V]{rules: rules}
 }
 

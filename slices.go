@@ -13,8 +13,8 @@ type SliceValidator[T any] struct {
 	rules []SliceRule[T]
 }
 
-// NewSliceValidator creates a new SliceValidator with the given rules.
-func NewSliceValidator[T any](rules ...SliceRule[T]) *SliceValidator[T] {
+// Slices creates a new SliceValidator with the given rules.
+func Slices[T any](rules ...SliceRule[T]) *SliceValidator[T] {
 	return &SliceValidator[T]{rules: rules}
 }
 

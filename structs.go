@@ -10,8 +10,8 @@ type StructValidator[T any] struct {
 	fields []fieldValidator[T]
 }
 
-// NewStruct creates a new StructValidator with the given fields.
-func NewStruct[T any](fields ...fieldValidator[T]) *StructValidator[T] {
+// Struct creates a new StructValidator with the given fields.
+func Struct[T any](fields ...fieldValidator[T]) *StructValidator[T] {
 	return &StructValidator[T]{fields: fields}
 }
 
@@ -56,7 +56,7 @@ func SliceField[T, E any](name string, getter func(T) []E, rules ...SliceRule[E]
 	return FieldAccessor[T, []E]{
 		name:  name,
 		get:   getter,
-		inner: NewSliceValidator(rules...),
+		inner: Slices(rules...),
 	}
 }
 
@@ -65,7 +65,7 @@ func MapField[T any, K comparable, V any](name string, getter func(T) map[K]V, r
 	return FieldAccessor[T, map[K]V]{
 		name:  name,
 		get:   getter,
-		inner: NewMapValidator(rules...),
+		inner: Maps(rules...),
 	}
 }
 
