@@ -109,9 +109,9 @@ func SlicesForEach[T any](rules ...Rule[T]) SliceRule[T] {
 func SlicesUnique[T comparable]() SliceRule[T] {
 	return func(values []T) Errors {
 		seen := make(map[T]struct{})
-		for _, v := range values {
+		for i, v := range values {
 			if _, ok := seen[v]; ok {
-				return NewErrors("", "unique", nil, false)
+				return NewErrors(strconv.Itoa(i), "unique", nil, false)
 			}
 			seen[v] = struct{}{}
 		}
@@ -136,9 +136,9 @@ func SlicesAllowed[T comparable](allowed ...T) SliceRule[T] {
 		allowedSet[v] = struct{}{}
 	}
 	return func(values []T) Errors {
-		for _, v := range values {
+		for i, v := range values {
 			if _, ok := allowedSet[v]; !ok {
-				return NewErrors("", "allowed", map[string]any{"value": v}, false)
+				return NewErrors(strconv.Itoa(i), "allowed", map[string]any{"value": v}, false)
 			}
 		}
 		return nil
@@ -152,11 +152,33 @@ func SlicesDisallowed[T comparable](disallowed ...T) SliceRule[T] {
 		disallowedSet[v] = struct{}{}
 	}
 	return func(values []T) Errors {
-		for _, v := range values {
+		for i, v := range values {
 			if _, ok := disallowedSet[v]; ok {
-				return NewErrors("", "disallowed", map[string]any{"value": v}, false)
+				return NewErrors(strconv.Itoa(i), "disallowed", map[string]any{"value": v}, false)
 			}
 		}
 		return nil
+	}
+}
+
+// SlicesAtIndex validates the value at the given index.
+func SlicesAtIndex[T any](index int, rules ...Rule[T]) SliceRule[T] {
+	return func(values []T) Errors {
+		if index < 0 || index >= len(values) {
+			return NewErrors(strconv.Itoa(index), "index", map[string]any{"index": index}, false)
+		}
+		v := values[index]
+		var errs Errors
+		for _, rule := range rules {
+			err := rule(v)
+			if err != nil {
+				err.Field = strconv.Itoa(index)
+				errs = append(errs, err)
+				if err.Fatal {
+					return errs
+				}
+			}
+		}
+		return errs
 	}
 }
