@@ -47,8 +47,8 @@ func (e *Error) Error() string {
 // Errors is a collection of validation errors.
 type Errors []*Error
 
-// NewErrors creates a new Errors instance with a single error.
-func NewErrors(field, code string, params map[string]any, fatal bool) Errors {
+// SingleErrorSlice creates a new Errors instance with a single error.
+func SingleErrorSlice(field, code string, params map[string]any, fatal bool) Errors {
 	return []*Error{
 		{
 			Field:  field,

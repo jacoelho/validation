@@ -1,6 +1,7 @@
 package validation_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/jacoelho/validation"
@@ -244,8 +245,8 @@ func TestMapsLengthBetween(t *testing.T) {
 	}
 }
 
-func TestMapsKeysAllowed(t *testing.T) {
-	rule := validation.MapsKeysAllowed[string, string]("a", "b", "c")
+func TestMapsKeysOneOf(t *testing.T) {
+	rule := validation.MapsKeysOneOf[string, string]("a", "b", "c")
 
 	tests := []struct {
 		name    string
@@ -267,7 +268,7 @@ func TestMapsKeysAllowed(t *testing.T) {
 			name:    "map with disallowed key should fail",
 			value:   map[string]string{"a": "1", "d": "2"},
 			wantErr: true,
-			errCode: "allowed",
+			errCode: "one_of",
 		},
 		{
 			name:    "nil map should pass",
@@ -294,8 +295,8 @@ func TestMapsKeysAllowed(t *testing.T) {
 	}
 }
 
-func TestMapsValuesAllowed(t *testing.T) {
-	rule := validation.MapsValuesAllowed[string, string]("1", "2", "3")
+func TestMapsValuesOneOf(t *testing.T) {
+	rule := validation.MapsValuesOneOf[string]("1", "2", "3")
 
 	tests := []struct {
 		name    string
@@ -317,7 +318,7 @@ func TestMapsValuesAllowed(t *testing.T) {
 			name:    "map with disallowed value should fail",
 			value:   map[string]string{"a": "1", "b": "4"},
 			wantErr: true,
-			errCode: "allowed",
+			errCode: "one_of",
 		},
 		{
 			name:    "nil map should pass",
@@ -344,8 +345,8 @@ func TestMapsValuesAllowed(t *testing.T) {
 	}
 }
 
-func TestMapsValuesDisallowed(t *testing.T) {
-	rule := validation.MapsValuesDisallowed[string, string]("x", "y", "z")
+func TestMapsValuesNotOneOf(t *testing.T) {
+	rule := validation.MapsValuesNotOneOf[string]("x", "y", "z")
 
 	tests := []struct {
 		name    string
@@ -367,7 +368,7 @@ func TestMapsValuesDisallowed(t *testing.T) {
 			name:    "map with disallowed value should fail",
 			value:   map[string]string{"a": "1", "b": "x"},
 			wantErr: true,
-			errCode: "disallowed",
+			errCode: "not_one_of",
 		},
 		{
 			name:    "nil map should pass",
@@ -394,8 +395,8 @@ func TestMapsValuesDisallowed(t *testing.T) {
 	}
 }
 
-func TestMapsKeysDisallowed(t *testing.T) {
-	rule := validation.MapsKeysDisallowed[string, string]("x", "y", "z")
+func TestMapsKeysNotOneOf(t *testing.T) {
+	rule := validation.MapsKeysNotOneOf[string, string]("x", "y", "z")
 
 	tests := []struct {
 		name    string
@@ -417,7 +418,7 @@ func TestMapsKeysDisallowed(t *testing.T) {
 			name:    "map with disallowed key should fail",
 			value:   map[string]string{"a": "1", "x": "2"},
 			wantErr: true,
-			errCode: "disallowed",
+			errCode: "not_one_of",
 		},
 		{
 			name:    "nil map should pass",
@@ -587,93 +588,92 @@ func TestMapsErrorParams(t *testing.T) {
 	})
 }
 
-func TestMapsKey(t *testing.T) {
+func TestMapsKeyValidation(t *testing.T) {
 	tests := []struct {
-		name     string
-		key      string
-		rules    []validation.Rule[string]
-		input    map[string]string
-		wantErr  bool
-		errCode  string
-		errField string
+		name      string
+		key       string
+		rules     []validation.Rule[string]
+		value     map[string]string
+		wantErr   bool
+		errCode   string
+		errField  string
+		errParams map[string]any
 	}{
 		{
-			name:     "key not found",
-			key:      "missing",
-			rules:    []validation.Rule[string]{validation.StringsNotEmpty[string]()},
-			input:    map[string]string{"existing": "value"},
-			wantErr:  true,
-			errCode:  "not_found",
-			errField: "",
+			name:      "key not found in map",
+			key:       "missing",
+			rules:     []validation.Rule[string]{validation.NotZero[string]()},
+			value:     map[string]string{"existing": "value"},
+			wantErr:   true,
+			errCode:   "not_found",
+			errField:  "",
+			errParams: map[string]any{"key": "missing"},
 		},
 		{
-			name:     "key found, value valid",
+			name:    "key exists with valid value",
+			key:     "name",
+			rules:   []validation.Rule[string]{validation.NotZero[string]()},
+			value:   map[string]string{"name": "John"},
+			wantErr: false,
+		},
+		{
+			name:     "key exists with invalid value",
 			key:      "name",
-			rules:    []validation.Rule[string]{validation.StringsNotEmpty[string]()},
-			input:    map[string]string{"name": "John"},
-			wantErr:  false,
-			errCode:  "",
-			errField: "",
-		},
-		{
-			name:     "key found, value invalid",
-			key:      "name",
-			rules:    []validation.Rule[string]{validation.StringsNotEmpty[string]()},
-			input:    map[string]string{"name": ""},
+			rules:    []validation.Rule[string]{validation.NotZero[string]()},
+			value:    map[string]string{"name": ""},
 			wantErr:  true,
-			errCode:  "not_empty",
-			errField: "",
+			errCode:  "zero",
+			errField: "name",
 		},
 		{
-			name: "multiple rules, all pass",
+			name: "multiple rules all pass",
 			key:  "name",
 			rules: []validation.Rule[string]{
-				validation.StringsNotEmpty[string](),
+				validation.NotZero[string](),
 				validation.StringsRuneMaxLength[string](10),
 			},
-			input:    map[string]string{"name": "John"},
-			wantErr:  false,
-			errCode:  "",
-			errField: "",
+			value:   map[string]string{"name": "John"},
+			wantErr: false,
 		},
 		{
-			name: "multiple rules, first fails",
+			name: "multiple rules first fails",
 			key:  "name",
 			rules: []validation.Rule[string]{
-				validation.StringsNotEmpty[string](),
+				validation.NotZero[string](),
 				validation.StringsRuneMaxLength[string](10),
 			},
-			input:    map[string]string{"name": ""},
+			value:    map[string]string{"name": ""},
 			wantErr:  true,
-			errCode:  "not_empty",
-			errField: "",
+			errCode:  "zero",
+			errField: "name",
 		},
 		{
-			name: "multiple rules, second fails",
+			name: "multiple rules second fails",
 			key:  "name",
 			rules: []validation.Rule[string]{
-				validation.StringsNotEmpty[string](),
+				validation.NotZero[string](),
 				validation.StringsRuneMaxLength[string](3),
 			},
-			input:    map[string]string{"name": "John"},
-			wantErr:  true,
-			errCode:  "max",
-			errField: "",
+			value:     map[string]string{"name": "John"},
+			wantErr:   true,
+			errCode:   "max",
+			errField:  "name",
+			errParams: map[string]any{"max": 3, "actual": 4},
 		},
 		{
 			name: "fatal error stops validation",
 			key:  "name",
 			rules: []validation.Rule[string]{
-				validation.RuleStopOnError(validation.StringsNotEmpty[string]()),
+				validation.RuleStopOnError(validation.NotZero[string]()),
 				validation.StringsRuneMaxLength[string](3),
 			},
-			input:    map[string]string{"name": ""},
+			value:    map[string]string{"name": ""},
 			wantErr:  true,
-			errCode:  "not_empty",
-			errField: "",
+			errCode:  "zero",
+			errField: "name",
 		},
 		{
-			name: "custom rule",
+			name: "custom validation rule",
 			key:  "status",
 			rules: []validation.Rule[string]{
 				func(value string) *validation.Error {
@@ -686,17 +686,51 @@ func TestMapsKey(t *testing.T) {
 					return nil
 				},
 			},
-			input:    map[string]string{"status": "pending"},
-			wantErr:  true,
-			errCode:  "invalid_status",
-			errField: "",
+			value:     map[string]string{"status": "pending"},
+			wantErr:   true,
+			errCode:   "invalid_status",
+			errField:  "status",
+			errParams: map[string]any{"value": "pending"},
+		},
+		{
+			name:      "nil map with key validation",
+			key:       "name",
+			rules:     []validation.Rule[string]{validation.NotZero[string]()},
+			value:     nil,
+			wantErr:   true,
+			errCode:   "not_found",
+			errField:  "",
+			errParams: map[string]any{"key": "name"},
+		},
+		{
+			name:      "empty map with key validation",
+			key:       "name",
+			rules:     []validation.Rule[string]{validation.NotZero[string]()},
+			value:     map[string]string{},
+			wantErr:   true,
+			errCode:   "not_found",
+			errField:  "",
+			errParams: map[string]any{"key": "name"},
+		},
+		{
+			name: "multiple keys with same validation",
+			key:  "name",
+			rules: []validation.Rule[string]{
+				validation.NotZero[string](),
+				validation.StringsRuneMaxLength[string](5),
+			},
+			value: map[string]string{
+				"name": "John",
+				"age":  "30",
+			},
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rule := validation.MapsKey(tt.key, tt.rules...)
-			err := rule(tt.input)
+			err := rule(tt.value)
 
 			if tt.wantErr {
 				if err == nil {
@@ -710,8 +744,11 @@ func TestMapsKey(t *testing.T) {
 				if err[0].Code != tt.errCode {
 					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
 				}
-				if tt.errField != "" && err[0].Field != tt.errField {
+				if err[0].Field != tt.errField {
 					t.Errorf("expected error field %q, got %q", tt.errField, err[0].Field)
+				}
+				if tt.errParams != nil && !reflect.DeepEqual(err[0].Params, tt.errParams) {
+					t.Errorf("expected error params %v, got %v", tt.errParams, err[0].Params)
 				}
 			} else {
 				if len(err) > 0 {

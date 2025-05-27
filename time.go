@@ -2,8 +2,8 @@ package validation
 
 import "time"
 
-// TimeBefore validates that the time is before the given time.
-func TimeBefore(other time.Time) Rule[time.Time] {
+// TimeBeforeOrEqual validates that the time is before the given time.
+func TimeBeforeOrEqual(other time.Time) Rule[time.Time] {
 	return func(value time.Time) *Error {
 		if value.After(other) {
 			return &Error{Code: "before", Params: map[string]any{"value": other}}
@@ -12,10 +12,30 @@ func TimeBefore(other time.Time) Rule[time.Time] {
 	}
 }
 
+// TimeBefore validates that the time is before the given time.
+func TimeBefore(other time.Time) Rule[time.Time] {
+	return func(value time.Time) *Error {
+		if !value.Before(other) {
+			return &Error{Code: "before", Params: map[string]any{"value": other}}
+		}
+		return nil
+	}
+}
+
+// TimeAfterOrEqual validates that the time is after the given time.
+func TimeAfterOrEqual(other time.Time) Rule[time.Time] {
+	return func(value time.Time) *Error {
+		if value.Before(other) {
+			return &Error{Code: "after", Params: map[string]any{"value": other}}
+		}
+		return nil
+	}
+}
+
 // TimeAfter validates that the time is after the given time.
 func TimeAfter(other time.Time) Rule[time.Time] {
 	return func(value time.Time) *Error {
-		if value.Before(other) {
+		if !value.After(other) {
 			return &Error{Code: "after", Params: map[string]any{"value": other}}
 		}
 		return nil

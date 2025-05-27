@@ -30,7 +30,7 @@ func NumbersMax[T cmp.Ordered](max T) Rule[T] {
 	}
 }
 
-// NumbersBetween validates that the value is between the given minimum and maximum.
+// NumbersBetween validates that the value is between the given minimum and maximum (inclusive).
 func NumbersBetween[T cmp.Ordered](min, max T) Rule[T] {
 	return func(value T) *Error {
 		if value < min || value > max {
@@ -47,8 +47,19 @@ func NumbersBetween[T cmp.Ordered](min, max T) Rule[T] {
 func NumbersPositive[T cmp.Ordered]() Rule[T] {
 	return func(value T) *Error {
 		var zero T
-		if cmp.Compare(value, zero) < 0 {
+		if cmp.Compare(value, zero) <= 0 {
 			return &Error{Code: "positive", Params: map[string]any{"value": value}}
+		}
+		return nil
+	}
+}
+
+// NumbersNonNegative validates that the value is greater than or equal to 0.
+func NumbersNonNegative[T cmp.Ordered]() Rule[T] {
+	return func(value T) *Error {
+		var zero T
+		if cmp.Compare(value, zero) < 0 {
+			return &Error{Code: "non_negative", Params: map[string]any{"value": value}}
 		}
 		return nil
 	}
@@ -58,8 +69,19 @@ func NumbersPositive[T cmp.Ordered]() Rule[T] {
 func NumbersNegative[T cmp.Ordered]() Rule[T] {
 	return func(value T) *Error {
 		var zero T
-		if cmp.Compare(value, zero) > 0 {
+		if cmp.Compare(value, zero) >= 0 {
 			return &Error{Code: "negative", Params: map[string]any{"value": value}}
+		}
+		return nil
+	}
+}
+
+// NumbersNonPositive validates that the value is less than or equal to 0.
+func NumbersNonPositive[T cmp.Ordered]() Rule[T] {
+	return func(value T) *Error {
+		var zero T
+		if cmp.Compare(value, zero) > 0 {
+			return &Error{Code: "non_positive", Params: map[string]any{"value": value}}
 		}
 		return nil
 	}

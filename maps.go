@@ -68,7 +68,7 @@ func MapsForEach[K comparable, V any](rules ...MapEntryRule[K, V]) MapRule[K, V]
 func MapsMinKeys[K comparable, V any](min int) MapRule[K, V] {
 	return func(values map[K]V) Errors {
 		if len(values) < min {
-			return NewErrors("", "min", map[string]any{"min": min, "actual": len(values)}, false)
+			return SingleErrorSlice("", "min", map[string]any{"min": min, "actual": len(values)}, false)
 		}
 		return nil
 	}
@@ -78,7 +78,7 @@ func MapsMinKeys[K comparable, V any](min int) MapRule[K, V] {
 func MapsMaxKeys[K comparable, V any](max int) MapRule[K, V] {
 	return func(values map[K]V) Errors {
 		if len(values) > max {
-			return NewErrors("", "max", map[string]any{"max": max, "actual": len(values)}, false)
+			return SingleErrorSlice("", "max", map[string]any{"max": max, "actual": len(values)}, false)
 		}
 		return nil
 	}
@@ -87,7 +87,7 @@ func MapsMaxKeys[K comparable, V any](max int) MapRule[K, V] {
 func MapsLength[K comparable, V any](length int) MapRule[K, V] {
 	return func(values map[K]V) Errors {
 		if len(values) != length {
-			return NewErrors("", "length", map[string]any{"length": length, "actual": len(values)}, false)
+			return SingleErrorSlice("", "length", map[string]any{"length": length, "actual": len(values)}, false)
 		}
 		return nil
 	}
@@ -96,70 +96,70 @@ func MapsLength[K comparable, V any](length int) MapRule[K, V] {
 func MapsLengthBetween[K comparable, V any](min, max int) MapRule[K, V] {
 	return func(values map[K]V) Errors {
 		if len(values) < min || len(values) > max {
-			return NewErrors("", "between", map[string]any{"min": min, "max": max, "actual": len(values)}, false)
+			return SingleErrorSlice("", "between", map[string]any{"min": min, "max": max, "actual": len(values)}, false)
 		}
 		return nil
 	}
 }
 
-// MapsKeysAllowed validates that the map has only the given keys.
-func MapsKeysAllowed[K comparable, V any](allowed ...K) MapRule[K, V] {
-	allowedSet := make(map[K]struct{}, len(allowed))
+// MapsKeysOneOf validates that the map has only the given keys.
+func MapsKeysOneOf[K comparable, V any](allowed ...K) MapRule[K, V] {
+	set := make(map[K]struct{}, len(allowed))
 	for _, v := range allowed {
-		allowedSet[v] = struct{}{}
+		set[v] = struct{}{}
 	}
 	return func(m map[K]V) Errors {
 		for k := range m {
-			if _, ok := allowedSet[k]; !ok {
-				return NewErrors("", "allowed", map[string]any{"value": k}, false)
+			if _, ok := set[k]; !ok {
+				return SingleErrorSlice("", "one_of", map[string]any{"value": k}, false)
 			}
 		}
 		return nil
 	}
 }
 
-// MapsValuesAllowed validates that the map has only the given values.
-func MapsValuesAllowed[K comparable, V comparable](allowed ...V) MapRule[K, V] {
-	allowedSet := make(map[V]struct{}, len(allowed))
-	for _, v := range allowed {
-		allowedSet[v] = struct{}{}
-	}
-	return func(m map[K]V) Errors {
-		for _, v := range m {
-			if _, ok := allowedSet[v]; !ok {
-				return NewErrors("", "allowed", map[string]any{"value": v}, false)
-			}
-		}
-		return nil
-	}
-}
-
-// MapsValuesDisallowed validates that the map does not have the given values.
-func MapsValuesDisallowed[K comparable, V comparable](disallowed ...V) MapRule[K, V] {
-	disallowedSet := make(map[V]struct{}, len(disallowed))
+// MapsKeysNotOneOf validates that the map does not have the given keys.
+func MapsKeysNotOneOf[K comparable, V any](disallowed ...K) MapRule[K, V] {
+	set := make(map[K]struct{}, len(disallowed))
 	for _, v := range disallowed {
-		disallowedSet[v] = struct{}{}
-	}
-	return func(m map[K]V) Errors {
-		for _, v := range m {
-			if _, ok := disallowedSet[v]; ok {
-				return NewErrors("", "disallowed", map[string]any{"value": v}, false)
-			}
-		}
-		return nil
-	}
-}
-
-// MapsKeysDisallowed validates that the map does not have the given keys.
-func MapsKeysDisallowed[K comparable, V any](disallowed ...K) MapRule[K, V] {
-	disallowedSet := make(map[K]struct{}, len(disallowed))
-	for _, v := range disallowed {
-		disallowedSet[v] = struct{}{}
+		set[v] = struct{}{}
 	}
 	return func(m map[K]V) Errors {
 		for k := range m {
-			if _, ok := disallowedSet[k]; ok {
-				return NewErrors("", "disallowed", map[string]any{"value": k}, false)
+			if _, ok := set[k]; ok {
+				return SingleErrorSlice("", "not_one_of", map[string]any{"value": k}, false)
+			}
+		}
+		return nil
+	}
+}
+
+// MapsValuesOneOf validates that the map has only the given values.
+func MapsValuesOneOf[K comparable, V comparable](allowed ...V) MapRule[K, V] {
+	set := make(map[V]struct{}, len(allowed))
+	for _, v := range allowed {
+		set[v] = struct{}{}
+	}
+	return func(m map[K]V) Errors {
+		for _, v := range m {
+			if _, ok := set[v]; !ok {
+				return SingleErrorSlice("", "one_of", map[string]any{"value": v}, false)
+			}
+		}
+		return nil
+	}
+}
+
+// MapsValuesNotOneOf validates that the map does not have the given values.
+func MapsValuesNotOneOf[K comparable, V comparable](disallowed ...V) MapRule[K, V] {
+	set := make(map[V]struct{}, len(disallowed))
+	for _, v := range disallowed {
+		set[v] = struct{}{}
+	}
+	return func(m map[K]V) Errors {
+		for _, v := range m {
+			if _, ok := set[v]; ok {
+				return SingleErrorSlice("", "not_one_of", map[string]any{"value": v}, false)
 			}
 		}
 		return nil
@@ -171,7 +171,7 @@ func MapsKey[K comparable, V any](key K, rules ...Rule[V]) MapRule[K, V] {
 	return func(m map[K]V) Errors {
 		v, ok := m[key]
 		if !ok {
-			return NewErrors("", "not_found", map[string]any{"key": key}, false)
+			return SingleErrorSlice("", "not_found", map[string]any{"key": key}, false)
 		}
 		var errs Errors
 		for _, rule := range rules {

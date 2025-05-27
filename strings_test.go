@@ -6,56 +6,6 @@ import (
 	"github.com/jacoelho/validation"
 )
 
-func TestStringsNotEmpty(t *testing.T) {
-	rule := validation.StringsNotEmpty[string]()
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty string should fail",
-			value:   "",
-			wantErr: true,
-			errCode: "not_empty",
-		},
-		{
-			name:    "non-empty string should pass",
-			value:   "hello",
-			wantErr: false,
-		},
-		{
-			name:    "whitespace string should pass",
-			value:   " ",
-			wantErr: false,
-		},
-		{
-			name:    "single character should pass",
-			value:   "a",
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
 func TestStringsRuneMinLength(t *testing.T) {
 	rule := validation.StringsRuneMinLength[string](3)
 

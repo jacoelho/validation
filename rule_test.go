@@ -9,9 +9,9 @@ import (
 	"github.com/jacoelho/validation"
 )
 
-func TestRequired(t *testing.T) {
+func TestZero(t *testing.T) {
 	t.Run("string", func(t *testing.T) {
-		rule := validation.Required[string]()
+		rule := validation.NotZero[string]()
 
 		tests := []struct {
 			name    string
@@ -23,7 +23,7 @@ func TestRequired(t *testing.T) {
 				name:    "empty string should fail",
 				value:   "",
 				wantErr: true,
-				errCode: "required",
+				errCode: "zero",
 			},
 			{
 				name:    "non-empty string should pass",
@@ -56,7 +56,7 @@ func TestRequired(t *testing.T) {
 	})
 
 	t.Run("int", func(t *testing.T) {
-		rule := validation.Required[int]()
+		rule := validation.NotZero[int]()
 
 		tests := []struct {
 			name    string
@@ -94,7 +94,7 @@ func TestRequired(t *testing.T) {
 	})
 
 	t.Run("bool", func(t *testing.T) {
-		rule := validation.Required[bool]()
+		rule := validation.NotZero[bool]()
 
 		tests := []struct {
 			name    string
@@ -127,7 +127,7 @@ func TestRequired(t *testing.T) {
 	})
 
 	t.Run("pointer", func(t *testing.T) {
-		rule := validation.Required[*string]()
+		rule := validation.NotZero[*string]()
 
 		value := "test"
 
@@ -162,8 +162,8 @@ func TestRequired(t *testing.T) {
 	})
 }
 
-func TestRequiredZeroable(t *testing.T) {
-	rule := validation.RequiredZeroable[time.Time]()
+func TestNotZeroableTime(t *testing.T) {
+	rule := validation.NotZeroable[time.Time]()
 
 	now := time.Now()
 	var zeroTime time.Time
@@ -178,7 +178,7 @@ func TestRequiredZeroable(t *testing.T) {
 			name:    "zero time should fail",
 			value:   zeroTime,
 			wantErr: true,
-			errCode: "required",
+			errCode: "zero",
 		},
 		{
 			name:    "non-zero time should pass",
@@ -212,7 +212,7 @@ func TestRequiredZeroable(t *testing.T) {
 
 func TestRuleNot(t *testing.T) {
 	// Create a rule that fails for empty strings
-	baseRule := validation.Required[string]()
+	baseRule := validation.NotZero[string]()
 	notRule := validation.RuleNot(baseRule)
 
 	tests := []struct {
@@ -254,7 +254,7 @@ func TestRuleNot(t *testing.T) {
 
 func TestRuleStopOnError(t *testing.T) {
 	// Create a rule that fails for empty strings
-	baseRule := validation.Required[string]()
+	baseRule := validation.NotZero[string]()
 	stopRule := validation.RuleStopOnError(baseRule)
 
 	tests := []struct {
@@ -269,7 +269,7 @@ func TestRuleStopOnError(t *testing.T) {
 			value:     "",
 			wantErr:   true,
 			wantFatal: true,
-			errCode:   "required",
+			errCode:   "zero",
 		},
 		{
 			name:      "non-empty string should pass",
@@ -381,7 +381,7 @@ func TestOrLastError(t *testing.T) {
 
 func TestWhen(t *testing.T) {
 	// Rule that requires non-empty string
-	baseRule := validation.Required[string]()
+	baseRule := validation.NotZero[string]()
 
 	// Apply rule only when string starts with "admin"
 	whenRule := validation.When(
@@ -475,7 +475,7 @@ func TestWhenWithFailingCondition(t *testing.T) {
 
 func TestUnless(t *testing.T) {
 	// Rule that requires non-empty string
-	baseRule := validation.Required[string]()
+	baseRule := validation.NotZero[string]()
 
 	// Apply rule unless string starts with "guest"
 	unlessRule := validation.Unless(
@@ -590,10 +590,10 @@ func TestComplexRuleCombination(t *testing.T) {
 }
 
 func TestRuleTypes(t *testing.T) {
-	t.Run("different types with Required", func(t *testing.T) {
-		stringRule := validation.Required[string]()
-		intRule := validation.Required[int]()
-		floatRule := validation.Required[float64]()
+	t.Run("different types with NotZero", func(t *testing.T) {
+		stringRule := validation.NotZero[string]()
+		intRule := validation.NotZero[int]()
+		floatRule := validation.NotZero[float64]()
 
 		// Test string
 		if err := stringRule(""); err == nil {
@@ -621,7 +621,7 @@ func TestRuleTypes(t *testing.T) {
 	})
 }
 
-func TestAllowed(t *testing.T) {
+func TestOneOf(t *testing.T) {
 	tests := []struct {
 		name      string
 		allowed   []string
@@ -641,7 +641,7 @@ func TestAllowed(t *testing.T) {
 			allowed:   []string{"a", "b", "c"},
 			value:     "d",
 			wantErr:   true,
-			errCode:   "not_allowed",
+			errCode:   "one_of",
 			errParams: map[string]any{"value": "d"},
 		},
 		{
@@ -649,7 +649,7 @@ func TestAllowed(t *testing.T) {
 			allowed:   []string{},
 			value:     "any",
 			wantErr:   true,
-			errCode:   "not_allowed",
+			errCode:   "one_of",
 			errParams: map[string]any{"value": "any"},
 		},
 		{
@@ -662,7 +662,7 @@ func TestAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rule := validation.Allowed(tt.allowed...)
+			rule := validation.OneOf(tt.allowed...)
 			err := rule(tt.value)
 
 			if tt.wantErr {
@@ -686,7 +686,7 @@ func TestAllowed(t *testing.T) {
 
 	t.Run("different types", func(t *testing.T) {
 		// Test with integers
-		intRule := validation.Allowed(1, 2, 3)
+		intRule := validation.OneOf(1, 2, 3)
 		if err := intRule(2); err != nil {
 			t.Errorf("unexpected error for valid integer: %v", err)
 		}
@@ -695,7 +695,7 @@ func TestAllowed(t *testing.T) {
 		}
 
 		type Status string
-		statusRule := validation.Allowed(Status("active"), Status("inactive"))
+		statusRule := validation.OneOf(Status("active"), Status("inactive"))
 		if err := statusRule(Status("active")); err != nil {
 			t.Errorf("unexpected error for valid status: %v", err)
 		}
@@ -705,7 +705,7 @@ func TestAllowed(t *testing.T) {
 	})
 }
 
-func TestDisallowed(t *testing.T) {
+func TestNotOneOf(t *testing.T) {
 	tests := []struct {
 		name       string
 		disallowed []string
@@ -725,7 +725,7 @@ func TestDisallowed(t *testing.T) {
 			disallowed: []string{"a", "b", "c"},
 			value:      "b",
 			wantErr:    true,
-			errCode:    "disallowed",
+			errCode:    "not_one_of",
 			errParams:  map[string]any{"value": "b"},
 		},
 		{
@@ -739,14 +739,14 @@ func TestDisallowed(t *testing.T) {
 			disallowed: []string{"", "a", "b"},
 			value:      "",
 			wantErr:    true,
-			errCode:    "disallowed",
+			errCode:    "not_one_of",
 			errParams:  map[string]any{"value": ""},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rule := validation.Disallowed(tt.disallowed...)
+			rule := validation.NotOneOf(tt.disallowed...)
 			err := rule(tt.value)
 
 			if tt.wantErr {
@@ -769,7 +769,7 @@ func TestDisallowed(t *testing.T) {
 	}
 
 	t.Run("different types", func(t *testing.T) {
-		intRule := validation.Disallowed(1, 2, 3)
+		intRule := validation.NotOneOf(1, 2, 3)
 		if err := intRule(4); err != nil {
 			t.Errorf("unexpected error for valid integer: %v", err)
 		}
@@ -778,7 +778,7 @@ func TestDisallowed(t *testing.T) {
 		}
 
 		type Status string
-		statusRule := validation.Disallowed(Status("invalid"), Status("error"))
+		statusRule := validation.NotOneOf(Status("invalid"), Status("error"))
 		if err := statusRule(Status("active")); err != nil {
 			t.Errorf("unexpected error for valid status: %v", err)
 		}

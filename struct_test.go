@@ -24,7 +24,7 @@ type Address struct {
 func TestStructValidation(t *testing.T) {
 	validator := validation.Struct(
 		validation.Field("Name", func(u User) string { return u.Name },
-			validation.StringsNotEmpty[string](),
+			validation.NotZero[string](),
 			validation.StringsRuneMaxLength[string](50),
 		),
 		validation.Field("Age", func(u User) int { return u.Age },
@@ -32,26 +32,26 @@ func TestStructValidation(t *testing.T) {
 			validation.NumbersMax(120),
 		),
 		validation.Field("Email", func(u User) string { return u.Email },
-			validation.StringsNotEmpty[string](),
+			validation.NotZero[string](),
 			validation.StringsRuneMaxLength[string](100),
 		),
 		validation.StructField("Address", func(u User) Address { return u.Address },
 			validation.Struct(
 				validation.Field("Street", func(a Address) string { return a.Street },
-					validation.StringsNotEmpty[string](),
+					validation.NotZero[string](),
 				),
 				validation.Field("City", func(a Address) string { return a.City },
-					validation.StringsNotEmpty[string](),
+					validation.NotZero[string](),
 				),
 				validation.Field("Country", func(a Address) string { return a.Country },
-					validation.StringsNotEmpty[string](),
+					validation.NotZero[string](),
 				),
 			),
 		),
 		validation.SliceField("Tags", func(u User) []string { return u.Tags },
 			validation.SlicesMaxLength[string](5),
 			validation.SlicesForEach(
-				validation.StringsNotEmpty[string](),
+				validation.NotZero[string](),
 				validation.StringsRuneMaxLength[string](20),
 			),
 		),
@@ -101,18 +101,17 @@ func TestStructValidation(t *testing.T) {
 		{
 			name: "empty name",
 			user: User{
-				Name:  "",
-				Age:   30,
-				Email: "john@example.com",
-				Address: Address{
-					Street:  "123 Main St",
-					City:    "New York",
-					Country: "USA",
+				Name:    "",
+				Age:     25,
+				Address: Address{Street: "123 Main St", City: "Anytown"},
+				Tags:    []string{"user"},
+				Settings: map[string]string{
+					"theme": "dark",
 				},
 			},
 			wantErr:  true,
-			errCode:  "not_empty",
 			errField: "Name",
+			errCode:  "zero",
 		},
 		{
 			name: "invalid age",
@@ -133,18 +132,18 @@ func TestStructValidation(t *testing.T) {
 		{
 			name: "empty address fields",
 			user: User{
-				Name:  "John Doe",
-				Age:   30,
-				Email: "john@example.com",
-				Address: Address{
-					Street:  "",
-					City:    "",
-					Country: "",
+				Name:    "John",
+				Age:     25,
+				Email:   "john@example.com",
+				Address: Address{Street: "", City: ""},
+				Tags:    []string{"user"},
+				Settings: map[string]string{
+					"theme": "dark",
 				},
 			},
 			wantErr:  true,
-			errCode:  "not_empty",
 			errField: "Address.Street",
+			errCode:  "zero",
 		},
 		{
 			name: "too many tags",
@@ -214,7 +213,7 @@ func TestStructValidation(t *testing.T) {
 func TestStructValidationWithPrefix(t *testing.T) {
 	validator := validation.Struct(
 		validation.Field("Name", func(u User) string { return u.Name },
-			validation.StringsNotEmpty[string](),
+			validation.NotZero[string](),
 		),
 	)
 
@@ -282,17 +281,17 @@ func TestNestedStructValidation(t *testing.T) {
 
 	validator := validation.Struct(
 		validation.Field("Name", func(e Employee) string { return e.Name },
-			validation.StringsNotEmpty[string](),
+			validation.NotZero[string](),
 		),
 		validation.StructField("Company", func(e Employee) Company { return e.Company },
 			validation.Struct(
 				validation.Field("Name", func(c Company) string { return c.Name },
-					validation.StringsNotEmpty[string](),
+					validation.NotZero[string](),
 				),
 				validation.StructField("Address", func(c Company) Address { return c.Address },
 					validation.Struct(
 						validation.Field("Street", func(a Address) string { return a.Street },
-							validation.StringsNotEmpty[string](),
+							validation.NotZero[string](),
 						),
 					),
 				),
@@ -390,7 +389,7 @@ func TestNestedStructValidation(t *testing.T) {
 func TestStructValidationWithFatalErrors(t *testing.T) {
 	validator := validation.Struct(
 		validation.Field("Name", func(u User) string { return u.Name },
-			validation.StringsNotEmpty[string](),
+			validation.NotZero[string](),
 		),
 		validation.Field("Age", func(u User) int { return u.Age },
 			validation.NumbersMin[int](18),

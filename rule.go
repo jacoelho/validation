@@ -62,42 +62,42 @@ func Unless[T any](condition func(T) bool, rule Rule[T]) Rule[T] {
 	}
 }
 
-// Required ensures the value is not the zero value for its type
-func Required[T comparable]() Rule[T] {
+// NotZero ensures the value is not the zero value for its type
+func NotZero[T comparable]() Rule[T] {
 	return func(value T) *Error {
 		var zero T
 		if value == zero {
 			return &Error{
-				Code: "required",
+				Code: "zero",
 			}
 		}
 		return nil
 	}
 }
 
-// RequiredZeroable ensures the value is not the zero value.
+// NotZeroable ensures the value is not the zero value.
 // The zero value is determined by the IsZero method.
-func RequiredZeroable[T interface{ IsZero() bool }]() Rule[T] {
+func NotZeroable[T interface{ IsZero() bool }]() Rule[T] {
 	return func(value T) *Error {
 		if value.IsZero() {
 			return &Error{
-				Code: "required",
+				Code: "zero",
 			}
 		}
 		return nil
 	}
 }
 
-// Allowed validates that the value is one of the given allowed values.
-func Allowed[T comparable](allowed ...T) Rule[T] {
-	allowedSet := make(map[T]struct{}, len(allowed))
+// OneOf validates that the value is one of the given allowed values.
+func OneOf[T comparable](allowed ...T) Rule[T] {
+	set := make(map[T]struct{}, len(allowed))
 	for _, v := range allowed {
-		allowedSet[v] = struct{}{}
+		set[v] = struct{}{}
 	}
 	return func(value T) *Error {
-		if _, ok := allowedSet[value]; !ok {
+		if _, ok := set[value]; !ok {
 			return &Error{
-				Code:   "not_allowed",
+				Code:   "one_of",
 				Params: map[string]any{"value": value},
 			}
 		}
@@ -105,16 +105,16 @@ func Allowed[T comparable](allowed ...T) Rule[T] {
 	}
 }
 
-// Disallowed validates that the value is not one of the given disallowed values.
-func Disallowed[T comparable](disallowed ...T) Rule[T] {
-	disallowedSet := make(map[T]struct{}, len(disallowed))
+// NotOneOf validates that the value is not one of the given disallowed values.
+func NotOneOf[T comparable](disallowed ...T) Rule[T] {
+	set := make(map[T]struct{}, len(disallowed))
 	for _, v := range disallowed {
-		disallowedSet[v] = struct{}{}
+		set[v] = struct{}{}
 	}
 	return func(value T) *Error {
-		if _, ok := disallowedSet[value]; ok {
+		if _, ok := set[value]; ok {
 			return &Error{
-				Code:   "disallowed",
+				Code:   "not_one_of",
 				Params: map[string]any{"value": value},
 			}
 		}
