@@ -39,12 +39,12 @@ func main() {
     validator := validation.Struct(
         validation.Field("Name", 
             func(u User) string { return u.Name },
-            validation.Required[string](),
+            validation.NotZero[string](),
             validation.StringsRuneMinLength[string](2),
         ),
         validation.Field("Email",
             func(u User) string { return u.Email },
-            validation.Required[string](),
+            validation.NotZero[string](),
             validation.StringsMatchesRegex[string](`^[^@]+@[^@]+\.[^@]+$`),
         ),
         validation.Field("Age",
@@ -101,25 +101,25 @@ type Error struct {
 
 ```go
 // Basic validation
-validation.Required[string]()                          // Not zero value
-validation.RequiredZeroable[time.Time]()               // For types with IsZero() method
-validation.Allowed[string]("admin", "user", "guest")   // Allowed values
-validation.Disallowed[string]("root", "admin")         // Disallowed values
+validation.NotZero[string]()                           // Not zero value
+validation.NotZeroable[time.Time]()                    // For types with IsZero() method
+validation.OneOf[string]("admin", "user", "guest")     // Allowed values
+validation.NotOneOf[string]("root", "admin")           // Disallowed values
 
 // Logical operators
-validation.RuleNot(validation.Required[string]()) // Negate a rule
-validation.Or(rule1, rule2, rule3)               // Any rule must pass
-validation.When(condition, rule)                 // Apply rule conditionally
-validation.Unless(condition, rule)               // Apply rule unless condition
+validation.RuleNot(validation.NotZero[string]())       // Negate a rule
+validation.Or(rule1, rule2, rule3)                     // Any rule must pass
+validation.When(condition, rule)                       // Apply rule conditionally
+validation.Unless(condition, rule)                     // Apply rule unless condition
 
 // Control flow
-validation.RuleStopOnError(rule)                 // Stop validation on error
+validation.RuleStopOnError(rule)                       // Stop validation on error
 ```
 
 ### String Validation
 
 ```go
-validation.StringsNotEmpty[string]()                           // Non-empty
+validation.NotZero[string]()                                   // Non-empty
 validation.StringsRuneMinLength[string](5)                     // Min rune length
 validation.StringsRuneMaxLength[string](100)                   // Max rune length
 validation.StringsRuneLengthBetween[string](5, 100)           // Length range
@@ -135,6 +135,8 @@ validation.NumbersMax(65)                    // Maximum value
 validation.NumbersBetween(18, 65)            // Range validation
 validation.NumbersPositive[int]()            // Greater than zero
 validation.NumbersNegative[int]()            // Less than zero
+validation.NumbersNonNegative[int]()         // Greater than or equal to zero
+validation.NumbersNonPositive[int]()         // Less than or equal to zero
 ```
 
 ### Time Validation
@@ -142,27 +144,28 @@ validation.NumbersNegative[int]()            // Less than zero
 ```go
 now := time.Now()
 validation.TimeBefore(now)                   // Before specific time
+validation.TimeBeforeOrEqual(now)            // Before or equal to specific time
 validation.TimeAfter(now.AddDate(-1, 0, 0))  // After specific time
+validation.TimeAfterOrEqual(now)             // After or equal to specific time
 validation.TimeBetween(start, end)           // Between time range
 ```
 
 ### Slice Validation
 
 ```go
-notEmpty := validation.StringsNotEmpty[string]()
 validation.SlicesMinLength[string](1)                    // Minimum length
 validation.SlicesMaxLength[string](10)                   // Maximum length
 validation.SlicesLength[string](5)                       // Exact length
 validation.SlicesInBetweenLength[string](1, 10)         // Length range
 validation.SlicesUnique[string]()                       // All elements unique
 validation.SlicesContains[string]("required")           // Contains value
-validation.SlicesAllowed[string]("a", "b", "c")         // Element allowed values
-validation.SlicesDisallowed[string]("x", "y")           // Element disallowed values
-validation.SlicesAtIndex(1, notEmpty)                   // Element at index 
+validation.SlicesOneOf[string]("a", "b", "c")           // Element allowed values
+validation.SlicesNotOneOf[string]("x", "y")             // Element disallowed values
+validation.SlicesAtIndex(1, validation.NotZero[string]()) // Element at index 
 
 // Validate each element
 validation.SlicesForEach(
-    validation.StringsNotEmpty[string](),
+    validation.NotZero[string](),
     validation.StringsRuneMaxLength[string](50),
 )
 ```
@@ -176,12 +179,12 @@ validation.MapsMaxKeys[string, string](10)              // Maximum number of key
 validation.MapsLength[string, string](5)                // Exact number of keys
 validation.MapsLengthBetween[string, string](1, 10)     // Range of key count
 validation.MapsKey[string, string]("key",               // Validate specific key
-    validation.StringsNotEmpty[string](),
+    validation.NotZero[string](),
 )
-validation.MapsKeysAllowed[string, string]("a", "b")    // Allowed keys
-validation.MapsKeysDisallowed[string, string]("x")      // Disallowed keys
-validation.MapsValuesAllowed[string, string]("y", "z")  // Allowed values
-validation.MapsValuesDisallowed[string, string]("bad")  // Disallowed values
+validation.MapsKeysOneOf[string, string]("a", "b")      // Allowed keys
+validation.MapsKeysNotOneOf[string, string]("x")        // Disallowed keys
+validation.MapsValuesOneOf[string, string]("y", "z")    // Allowed values
+validation.MapsValuesNotOneOf[string, string]("bad")    // Disallowed values
 
 // Validate each key-value pair
 validation.MapsForEach(func(key, value string) *validation.Error {
@@ -208,7 +211,7 @@ type Person struct {
 validator := validation.Struct(
     validation.Field("Name", 
         func(p Person) string { return p.Name },
-        validation.Required[string](),
+        validation.NotZero[string](),
         validation.StringsRuneMinLength[string](2),
         validation.StringsRuneMaxLength[string](50),
     ),
@@ -241,15 +244,15 @@ type User struct {
 // Create address validator
 addressValidator := validation.Struct(
     validation.Field("Street", func(a Address) string { return a.Street },
-        validation.Required[string](),
+        validation.NotZero[string](),
         validation.StringsRuneMinLength[string](5),
     ),
     validation.Field("City", func(a Address) string { return a.City },
-        validation.Required[string](),
+        validation.NotZero[string](),
         validation.StringsRuneMinLength[string](2),
     ),
     validation.Field("ZIP", func(a Address) string { return a.ZIP },
-        validation.Required[string](),
+        validation.NotZero[string](),
         validation.StringsMatchesRegex[string](`^\d{5}(-\d{4})?$`),
     ),
 )
@@ -257,10 +260,10 @@ addressValidator := validation.Struct(
 // Create user validator with nested address
 userValidator := validation.Struct(
     validation.Field("Name", func(u User) string { return u.Name },
-        validation.Required[string](),
+        validation.NotZero[string](),
     ),
     validation.Field("Email", func(u User) string { return u.Email },
-        validation.Required[string](),
+        validation.NotZero[string](),
         validation.StringsMatchesRegex[string](`^[^@]+@[^@]+\.[^@]+$`),
     ),
     validation.StructField("Address", func(u User) Address { return u.Address },
@@ -297,7 +300,7 @@ type User struct {
 
 validator := validation.Struct(
     validation.Field("Name", func(u User) string { return u.Name },
-        validation.Required[string](),
+        validation.NotZero[string](),
     ),
     
     // Slice validation
@@ -306,7 +309,7 @@ validator := validation.Struct(
         validation.SlicesMaxLength[string](5),
         validation.SlicesUnique[string](),
         validation.SlicesForEach(
-            validation.StringsNotEmpty[string](),
+            validation.NotZero[string](),
             validation.StringsRuneMaxLength[string](20),
         ),
     ),
@@ -421,30 +424,6 @@ validation.Field("Description", func(p Product) string { return p.Description },
 )
 ```
 
-### Custom Rule with External Dependencies
-
-```go
-func ValidateUniqueUsername(userRepo UserRepository) validation.Rule[string] {
-    return func(username string) *validation.Error {
-        exists, err := userRepo.UsernameExists(username)
-        if err != nil {
-            return &validation.Error{
-                Code: "username_check_failed",
-                Params: map[string]any{"error": err.Error()},
-                Fatal: true, // Stop validation on system errors
-            }
-        }
-        if exists {
-            return &validation.Error{
-                Code: "username_taken",
-                Params: map[string]any{"username": username},
-            }
-        }
-        return nil
-    }
-}
-```
-
 ## Advanced Usage
 
 ### Conditional Validation
@@ -458,14 +437,14 @@ type User struct {
 
 validator := validation.Struct(
     validation.Field("Type", func(u User) string { return u.Type },
-        validation.Allowed[string]("basic", "premium"),
+        validation.OneOf[string]("basic", "premium"),
     ),
     
     // Require credit card for premium users
     validation.Field("CreditCard", func(u User) string { return u.CreditCard },
         validation.When(
             func(u User) bool { return u.Type == "premium" },
-            validation.Required[string](),
+            validation.NotZero[string](),
         ),
     ),
     
@@ -473,7 +452,7 @@ validator := validation.Struct(
     validation.Field("BankAccount", func(u User) string { return u.BankAccount },
         validation.Unless(
             func(u User) bool { return u.Type == "premium" },
-            validation.Required[string](),
+            validation.NotZero[string](),
         ),
     ),
 )
@@ -486,10 +465,10 @@ validator := validation.Struct(
 validation.Field("ContactInfo", func(u User) User { return u },
     validation.Or(
         validation.Field("Email", func(u User) string { return u.Email },
-            validation.Required[string](),
+            validation.NotZero[string](),
         ),
         validation.Field("Phone", func(u User) string { return u.Phone },
-            validation.Required[string](),
+            validation.NotZero[string](),
         ),
     ),
 )
@@ -500,7 +479,7 @@ validation.Field("ContactInfo", func(u User) User { return u },
 ```go
 validation.Field("Password", func(u User) string { return u.Password },
     // Stop validation if password is missing
-    validation.RuleStopOnError(validation.Required[string]()),
+    validation.RuleStopOnError(validation.NotZero[string]()),
     
     // These rules only run if password is present
     validation.StringsRuneMinLength[string](8),
@@ -515,13 +494,13 @@ validation.Field("Password", func(u User) string { return u.Password },
 // Create reusable validation groups
 var (
     emailRules = []validation.Rule[string]{
-        validation.Required[string](),
+        validation.NotZero[string](),
         validation.StringsMatchesRegex[string](`^[^@]+@[^@]+\.[^@]+$`),
         validation.StringsRuneMaxLength[string](100),
     }
     
     passwordRules = []validation.Rule[string]{
-        validation.Required[string](),
+        validation.NotZero[string](),
         validation.StringsRuneMinLength[string](8),
         validation.StringsMatchesRegex[string](`[A-Z]`),
         validation.StringsMatchesRegex[string](`[a-z]`),
@@ -537,6 +516,6 @@ userValidator := validation.Struct(
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License, see the LICENSE file for details.
 
 
