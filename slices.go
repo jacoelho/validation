@@ -47,10 +47,7 @@ func (v *SliceValidator[T]) ValidateWithPrefix(values []T, prefix string) Errors
 func SlicesMinLength[T any](min int) SliceRule[T] {
 	return func(values []T) Errors {
 		if len(values) < min {
-			return Errors{&Error{
-				Code:   "min_length",
-				Params: map[string]any{"min": min, "actual": len(values)},
-			}}
+			return SingleErrorSlice("", "min", map[string]any{"min": min, "actual": len(values)}, false)
 		}
 		return nil
 	}
@@ -60,7 +57,7 @@ func SlicesMinLength[T any](min int) SliceRule[T] {
 func SlicesMaxLength[T any](max int) SliceRule[T] {
 	return func(values []T) Errors {
 		if len(values) > max {
-			return NewErrors("", "max", map[string]any{"max": max, "actual": len(values)}, false)
+			return SingleErrorSlice("", "max", map[string]any{"max": max, "actual": len(values)}, false)
 		}
 		return nil
 	}
@@ -70,7 +67,7 @@ func SlicesMaxLength[T any](max int) SliceRule[T] {
 func SlicesInBetweenLength[T any](min, max int) SliceRule[T] {
 	return func(values []T) Errors {
 		if len(values) < min || len(values) > max {
-			return NewErrors("", "between", map[string]any{"min": min, "max": max, "actual": len(values)}, false)
+			return SingleErrorSlice("", "between", map[string]any{"min": min, "max": max, "actual": len(values)}, false)
 		}
 		return nil
 	}
@@ -80,7 +77,7 @@ func SlicesInBetweenLength[T any](min, max int) SliceRule[T] {
 func SlicesLength[T any](length int) SliceRule[T] {
 	return func(values []T) Errors {
 		if len(values) != length {
-			return NewErrors("", "length", map[string]any{"length": length, "actual": len(values)}, false)
+			return SingleErrorSlice("", "length", map[string]any{"length": length, "actual": len(values)}, false)
 		}
 		return nil
 	}
@@ -111,7 +108,7 @@ func SlicesUnique[T comparable]() SliceRule[T] {
 		seen := make(map[T]struct{})
 		for i, v := range values {
 			if _, ok := seen[v]; ok {
-				return NewErrors(strconv.Itoa(i), "unique", nil, false)
+				return SingleErrorSlice(strconv.Itoa(i), "unique", nil, false)
 			}
 			seen[v] = struct{}{}
 		}
@@ -125,36 +122,36 @@ func SlicesContains[T comparable](value T) SliceRule[T] {
 		if slices.Contains(values, value) {
 			return nil
 		}
-		return NewErrors("", "contains", map[string]any{"value": value}, false)
+		return SingleErrorSlice("", "contains", map[string]any{"value": value}, false)
 	}
 }
 
-// SlicesAllowed validates that the slice contains only the given values.
-func SlicesAllowed[T comparable](allowed ...T) SliceRule[T] {
-	allowedSet := make(map[T]struct{}, len(allowed))
+// SlicesOneOf validates that the slice contains only the given values.
+func SlicesOneOf[T comparable](allowed ...T) SliceRule[T] {
+	set := make(map[T]struct{}, len(allowed))
 	for _, v := range allowed {
-		allowedSet[v] = struct{}{}
+		set[v] = struct{}{}
 	}
 	return func(values []T) Errors {
 		for i, v := range values {
-			if _, ok := allowedSet[v]; !ok {
-				return NewErrors(strconv.Itoa(i), "allowed", map[string]any{"value": v}, false)
+			if _, ok := set[v]; !ok {
+				return SingleErrorSlice(strconv.Itoa(i), "one_of", map[string]any{"value": v}, false)
 			}
 		}
 		return nil
 	}
 }
 
-// SlicesDisallowed validates that the slice does not contain the given values.
-func SlicesDisallowed[T comparable](disallowed ...T) SliceRule[T] {
-	disallowedSet := make(map[T]struct{}, len(disallowed))
+// SlicesNotOneOf validates that the slice does not contain the given values.
+func SlicesNotOneOf[T comparable](disallowed ...T) SliceRule[T] {
+	set := make(map[T]struct{}, len(disallowed))
 	for _, v := range disallowed {
-		disallowedSet[v] = struct{}{}
+		set[v] = struct{}{}
 	}
 	return func(values []T) Errors {
 		for i, v := range values {
-			if _, ok := disallowedSet[v]; ok {
-				return NewErrors(strconv.Itoa(i), "disallowed", map[string]any{"value": v}, false)
+			if _, ok := set[v]; ok {
+				return SingleErrorSlice(strconv.Itoa(i), "not_one_of", map[string]any{"value": v}, false)
 			}
 		}
 		return nil
@@ -165,7 +162,7 @@ func SlicesDisallowed[T comparable](disallowed ...T) SliceRule[T] {
 func SlicesAtIndex[T any](index int, rules ...Rule[T]) SliceRule[T] {
 	return func(values []T) Errors {
 		if index < 0 || index >= len(values) {
-			return NewErrors(strconv.Itoa(index), "index", map[string]any{"index": index}, false)
+			return SingleErrorSlice(strconv.Itoa(index), "index", map[string]any{"index": index}, false)
 		}
 		v := values[index]
 		var errs Errors

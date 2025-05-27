@@ -402,9 +402,10 @@ func TestNumbersPositive(t *testing.T) {
 				wantErr: false,
 			},
 			{
-				name:    "zero should pass",
+				name:    "zero should fail",
 				value:   0,
-				wantErr: false,
+				wantErr: true,
+				errCode: "positive",
 			},
 			{
 				name:    "negative value should fail",
@@ -445,6 +446,112 @@ func TestNumbersPositive(t *testing.T) {
 
 	t.Run("float64", func(t *testing.T) {
 		rule := validation.NumbersPositive[float64]()
+
+		tests := []struct {
+			name    string
+			value   float64
+			wantErr bool
+		}{
+			{
+				name:    "positive float should pass",
+				value:   5.5,
+				wantErr: false,
+			},
+			{
+				name:    "zero float should fail",
+				value:   0.0,
+				wantErr: true,
+			},
+			{
+				name:    "negative float should fail",
+				value:   -5.5,
+				wantErr: true,
+			},
+			{
+				name:    "very small positive float should pass",
+				value:   0.0001,
+				wantErr: false,
+			},
+			{
+				name:    "very small negative float should fail",
+				value:   -0.0001,
+				wantErr: true,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := rule(tt.value)
+				if tt.wantErr && err == nil {
+					t.Error("expected error but got nil")
+				}
+				if !tt.wantErr && err != nil {
+					t.Errorf("expected no error but got %v", err)
+				}
+			})
+		}
+	})
+}
+
+func TestNumbersNonNegative(t *testing.T) {
+	t.Run("int", func(t *testing.T) {
+		rule := validation.NumbersNonNegative[int]()
+
+		tests := []struct {
+			name    string
+			value   int
+			wantErr bool
+			errCode string
+		}{
+			{
+				name:    "positive value should pass",
+				value:   5,
+				wantErr: false,
+			},
+			{
+				name:    "zero should pass",
+				value:   0,
+				wantErr: false,
+			},
+			{
+				name:    "negative value should fail",
+				value:   -5,
+				wantErr: true,
+				errCode: "non_negative",
+			},
+			{
+				name:    "large positive value should pass",
+				value:   1000000,
+				wantErr: false,
+			},
+			{
+				name:    "large negative value should fail",
+				value:   -1000000,
+				wantErr: true,
+				errCode: "non_negative",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := rule(tt.value)
+				if tt.wantErr {
+					if err == nil {
+						t.Error("expected error but got nil")
+					} else if err.Code != tt.errCode {
+						t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
+					}
+				} else {
+					if err != nil {
+						t.Errorf("expected no error but got %v", err)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("float64", func(t *testing.T) {
+		rule := validation.NumbersNonNegative[float64]()
 
 		tests := []struct {
 			name    string
@@ -508,9 +615,10 @@ func TestNumbersNegative(t *testing.T) {
 				wantErr: false,
 			},
 			{
-				name:    "zero should pass",
+				name:    "zero should fail",
 				value:   0,
-				wantErr: false,
+				wantErr: true,
+				errCode: "negative",
 			},
 			{
 				name:    "positive value should fail",
@@ -551,6 +659,112 @@ func TestNumbersNegative(t *testing.T) {
 
 	t.Run("float32", func(t *testing.T) {
 		rule := validation.NumbersNegative[float32]()
+
+		tests := []struct {
+			name    string
+			value   float32
+			wantErr bool
+		}{
+			{
+				name:    "negative float should pass",
+				value:   -5.5,
+				wantErr: false,
+			},
+			{
+				name:    "zero float should fail",
+				value:   0.0,
+				wantErr: true,
+			},
+			{
+				name:    "positive float should fail",
+				value:   5.5,
+				wantErr: true,
+			},
+			{
+				name:    "very small negative float should pass",
+				value:   -0.0001,
+				wantErr: false,
+			},
+			{
+				name:    "very small positive float should fail",
+				value:   0.0001,
+				wantErr: true,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := rule(tt.value)
+				if tt.wantErr && err == nil {
+					t.Error("expected error but got nil")
+				}
+				if !tt.wantErr && err != nil {
+					t.Errorf("expected no error but got %v", err)
+				}
+			})
+		}
+	})
+}
+
+func TestNumbersNonPositive(t *testing.T) {
+	t.Run("int", func(t *testing.T) {
+		rule := validation.NumbersNonPositive[int]()
+
+		tests := []struct {
+			name    string
+			value   int
+			wantErr bool
+			errCode string
+		}{
+			{
+				name:    "negative value should pass",
+				value:   -5,
+				wantErr: false,
+			},
+			{
+				name:    "zero should pass",
+				value:   0,
+				wantErr: false,
+			},
+			{
+				name:    "positive value should fail",
+				value:   5,
+				wantErr: true,
+				errCode: "non_positive",
+			},
+			{
+				name:    "large negative value should pass",
+				value:   -1000000,
+				wantErr: false,
+			},
+			{
+				name:    "large positive value should fail",
+				value:   1000000,
+				wantErr: true,
+				errCode: "non_positive",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := rule(tt.value)
+				if tt.wantErr {
+					if err == nil {
+						t.Error("expected error but got nil")
+					} else if err.Code != tt.errCode {
+						t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
+					}
+				} else {
+					if err != nil {
+						t.Errorf("expected no error but got %v", err)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("float32", func(t *testing.T) {
+		rule := validation.NumbersNonPositive[float32]()
 
 		tests := []struct {
 			name    string
@@ -683,6 +897,23 @@ func TestNumbersErrorParams(t *testing.T) {
 		}
 	})
 
+	t.Run("NumbersNonNegative error params", func(t *testing.T) {
+		rule := validation.NumbersNonNegative[int]()
+		err := rule(-5)
+
+		if err == nil {
+			t.Fatal("expected error but got nil")
+		}
+
+		if err.Code != "non_negative" {
+			t.Errorf("expected code 'non_negative', got %q", err.Code)
+		}
+
+		if err.Params["value"] != -5 {
+			t.Errorf("expected value param to be -5, got %v", err.Params["value"])
+		}
+	})
+
 	t.Run("NumbersNegative error params", func(t *testing.T) {
 		rule := validation.NumbersNegative[int]()
 		err := rule(5)
@@ -693,6 +924,23 @@ func TestNumbersErrorParams(t *testing.T) {
 
 		if err.Code != "negative" {
 			t.Errorf("expected code 'negative', got %q", err.Code)
+		}
+
+		if err.Params["value"] != 5 {
+			t.Errorf("expected value param to be 5, got %v", err.Params["value"])
+		}
+	})
+
+	t.Run("NumbersNonPositive error params", func(t *testing.T) {
+		rule := validation.NumbersNonPositive[int]()
+		err := rule(5)
+
+		if err == nil {
+			t.Fatal("expected error but got nil")
+		}
+
+		if err.Code != "non_positive" {
+			t.Errorf("expected code 'non_positive', got %q", err.Code)
 		}
 
 		if err.Params["value"] != 5 {

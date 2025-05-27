@@ -6,18 +6,6 @@ import (
 	"unicode/utf8"
 )
 
-// StringsNotEmpty validates that the string is not empty.
-func StringsNotEmpty[T ~string]() Rule[T] {
-	return func(value T) *Error {
-		if value == "" {
-			return &Error{
-				Code: "not_empty",
-			}
-		}
-		return nil
-	}
-}
-
 // StringsRuneLengthBetween validates string length (in runes, not bytes) between the given minimum and maximum.
 func StringsRuneLengthBetween[T ~string](min, max int) Rule[T] {
 	return func(value T) *Error {

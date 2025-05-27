@@ -324,9 +324,9 @@ func TestNewErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := validation.NewErrors(tt.field, tt.code, tt.params, tt.fatal)
+			got := validation.SingleErrorSlice(tt.field, tt.code, tt.params, tt.fatal)
 			if len(got) != len(tt.expected) {
-				t.Errorf("NewErrors() returned %d errors, want %d", len(got), len(tt.expected))
+				t.Errorf("SingleErrorSlice() returned %d errors, want %d", len(got), len(tt.expected))
 				return
 			}
 

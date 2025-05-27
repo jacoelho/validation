@@ -20,7 +20,7 @@ func Example() {
 	// Create a validator for the User struct
 	validator := validation.Struct(
 		validation.Field("Name", func(u User) string { return u.Name },
-			validation.StringsNotEmpty[string](),
+			validation.NotZero[string](),
 			validation.StringsRuneMaxLength[string](50),
 		),
 		validation.Field("Age", func(u User) int { return u.Age },
@@ -28,17 +28,17 @@ func Example() {
 			validation.NumbersMax(120),
 		),
 		validation.Field("Email", func(u User) string { return u.Email },
-			validation.StringsNotEmpty[string](),
+			validation.NotZero[string](),
 			validation.StringsRuneMaxLength[string](100),
 		),
 		validation.Field("Password", func(u User) string { return u.Password },
-			validation.StringsNotEmpty[string](),
+			validation.NotZero[string](),
 			validation.StringsRuneMinLength[string](8),
 		),
 		validation.SliceField("Tags", func(u User) []string { return u.Tags },
 			validation.SlicesMaxLength[string](5),
 			validation.SlicesForEach(
-				validation.StringsNotEmpty[string](),
+				validation.NotZero[string](),
 				validation.StringsRuneMaxLength[string](20),
 			),
 		),
@@ -56,7 +56,7 @@ func Example() {
 					return nil
 				},
 			),
-			validation.MapsKey("lang", validation.Allowed("en", "fr")),
+			validation.MapsKey("lang", validation.OneOf("en", "fr")),
 		),
 	)
 
@@ -92,5 +92,5 @@ func Example() {
 
 	// Output:
 	// Valid user errors: 0
-	// Invalid user errors: not_empty (field: Name); min (field: Age) {actual: 15, min: 18}; min (field: Password) {actual: 5, min: 8}; not_empty (field: Tags.0); max (field: Tags.1) {actual: 41, max: 20}; empty_value (field: Settings.theme) {key: theme}
+	// Invalid user errors: zero (field: Name); min (field: Age) {actual: 15, min: 18}; min (field: Password) {actual: 5, min: 8}; zero (field: Tags.0); max (field: Tags.1) {actual: 41, max: 20}; empty_value (field: Settings.theme) {key: theme}
 }

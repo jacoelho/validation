@@ -20,13 +20,13 @@ func TestSlicesMinLength(t *testing.T) {
 			name:    "empty slice should fail",
 			value:   []string{},
 			wantErr: true,
-			errCode: "min_length",
+			errCode: "min",
 		},
 		{
 			name:    "slice shorter than minimum should fail",
 			value:   []string{"a", "b"},
 			wantErr: true,
-			errCode: "min_length",
+			errCode: "min",
 		},
 		{
 			name:    "slice equal to minimum should pass",
@@ -42,7 +42,7 @@ func TestSlicesMinLength(t *testing.T) {
 			name:    "nil slice should fail",
 			value:   nil,
 			wantErr: true,
-			errCode: "min_length",
+			errCode: "min",
 		},
 	}
 
@@ -247,7 +247,7 @@ func TestSlicesInBetweenLength(t *testing.T) {
 
 func TestSlicesForEach(t *testing.T) {
 	rule := validation.SlicesForEach(
-		validation.StringsNotEmpty[string](),
+		validation.NotZero[string](),
 		validation.StringsRuneMaxLength[string](5),
 	)
 
@@ -272,7 +272,7 @@ func TestSlicesForEach(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "too long element should fail",
+			name:    "element too long should fail",
 			value:   []string{"a", "bb", "cccccc"},
 			wantErr: true,
 		},
@@ -404,8 +404,8 @@ func TestSlicesContains(t *testing.T) {
 	}
 }
 
-func TestSlicesAllowed(t *testing.T) {
-	rule := validation.SlicesAllowed[string]("a", "b", "c")
+func TestSlicesOneOf(t *testing.T) {
+	rule := validation.SlicesOneOf[string]("a", "b", "c")
 
 	tests := []struct {
 		name    string
@@ -427,7 +427,7 @@ func TestSlicesAllowed(t *testing.T) {
 			name:    "disallowed value should fail",
 			value:   []string{"a", "d", "c"},
 			wantErr: true,
-			errCode: "allowed",
+			errCode: "one_of",
 		},
 		{
 			name:    "nil slice should pass",
@@ -454,8 +454,8 @@ func TestSlicesAllowed(t *testing.T) {
 	}
 }
 
-func TestSlicesDisallowed(t *testing.T) {
-	rule := validation.SlicesDisallowed[string]("x", "y", "z")
+func TestSlicesNotOneOf(t *testing.T) {
+	rule := validation.SlicesNotOneOf[string]("x", "y", "z")
 
 	tests := []struct {
 		name    string
@@ -477,7 +477,7 @@ func TestSlicesDisallowed(t *testing.T) {
 			name:    "disallowed value should fail",
 			value:   []string{"a", "x", "c"},
 			wantErr: true,
-			errCode: "disallowed",
+			errCode: "not_one_of",
 		},
 		{
 			name:    "nil slice should pass",
@@ -544,8 +544,8 @@ func TestSlicesErrorParams(t *testing.T) {
 			t.Fatal("expected error but got empty slice")
 		}
 
-		if err[0].Code != "min_length" {
-			t.Errorf("expected code 'min_length', got %q", err[0].Code)
+		if err[0].Code != "min" {
+			t.Errorf("expected code 'min', got %q", err[0].Code)
 		}
 
 		if err[0].Params["min"] != 3 {
@@ -599,25 +599,25 @@ func TestSlicesAtIndex(t *testing.T) {
 		errParams map[string]any
 	}{
 		{
-			name:    "valid index, valid value",
+			name:    "valid index with valid value",
 			index:   1,
-			rules:   []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			rules:   []validation.Rule[string]{validation.NotZero[string]()},
 			input:   []string{"a", "b", "c"},
 			wantErr: false,
 		},
 		{
-			name:     "valid index, invalid value",
+			name:     "valid index with invalid value",
 			index:    1,
-			rules:    []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			rules:    []validation.Rule[string]{validation.NotZero[string]()},
 			input:    []string{"a", "", "c"},
 			wantErr:  true,
-			errCode:  "not_empty",
+			errCode:  "zero",
 			errField: "1",
 		},
 		{
-			name:      "negative index",
+			name:      "negative index should fail",
 			index:     -1,
-			rules:     []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			rules:     []validation.Rule[string]{validation.NotZero[string]()},
 			input:     []string{"a", "b", "c"},
 			wantErr:   true,
 			errCode:   "index",
@@ -625,9 +625,9 @@ func TestSlicesAtIndex(t *testing.T) {
 			errParams: map[string]any{"index": -1},
 		},
 		{
-			name:      "index out of bounds",
+			name:      "index out of bounds should fail",
 			index:     3,
-			rules:     []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			rules:     []validation.Rule[string]{validation.NotZero[string]()},
 			input:     []string{"a", "b", "c"},
 			wantErr:   true,
 			errCode:   "index",
@@ -635,32 +635,32 @@ func TestSlicesAtIndex(t *testing.T) {
 			errParams: map[string]any{"index": 3},
 		},
 		{
-			name:  "multiple rules, all pass",
+			name:  "multiple rules all pass",
 			index: 1,
 			rules: []validation.Rule[string]{
-				validation.StringsNotEmpty[string](),
+				validation.NotZero[string](),
 				validation.StringsRuneMaxLength[string](10),
 			},
 			input:   []string{"a", "valid", "c"},
 			wantErr: false,
 		},
 		{
-			name:  "multiple rules, first fails",
+			name:  "multiple rules first fails",
 			index: 1,
 			rules: []validation.Rule[string]{
-				validation.StringsNotEmpty[string](),
+				validation.NotZero[string](),
 				validation.StringsRuneMaxLength[string](10),
 			},
 			input:    []string{"a", "", "c"},
 			wantErr:  true,
-			errCode:  "not_empty",
+			errCode:  "zero",
 			errField: "1",
 		},
 		{
-			name:  "multiple rules, second fails",
+			name:  "multiple rules second fails",
 			index: 1,
 			rules: []validation.Rule[string]{
-				validation.StringsNotEmpty[string](),
+				validation.NotZero[string](),
 				validation.StringsRuneMaxLength[string](3),
 			},
 			input:    []string{"a", "too long", "c"},
@@ -672,18 +672,18 @@ func TestSlicesAtIndex(t *testing.T) {
 			name:  "fatal error stops validation",
 			index: 1,
 			rules: []validation.Rule[string]{
-				validation.RuleStopOnError(validation.StringsNotEmpty[string]()),
+				validation.RuleStopOnError(validation.NotZero[string]()),
 				validation.StringsRuneMaxLength[string](3),
 			},
 			input:    []string{"a", "", "c"},
 			wantErr:  true,
-			errCode:  "not_empty",
+			errCode:  "zero",
 			errField: "1",
 		},
 		{
-			name:      "empty slice",
+			name:      "empty slice should fail",
 			index:     0,
-			rules:     []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			rules:     []validation.Rule[string]{validation.NotZero[string]()},
 			input:     []string{},
 			wantErr:   true,
 			errCode:   "index",
@@ -691,9 +691,9 @@ func TestSlicesAtIndex(t *testing.T) {
 			errParams: map[string]any{"index": 0},
 		},
 		{
-			name:      "nil slice",
+			name:      "nil slice should fail",
 			index:     0,
-			rules:     []validation.Rule[string]{validation.StringsNotEmpty[string]()},
+			rules:     []validation.Rule[string]{validation.NotZero[string]()},
 			input:     nil,
 			wantErr:   true,
 			errCode:   "index",
