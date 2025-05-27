@@ -103,8 +103,8 @@ type Error struct {
 // Basic validation
 validation.NotZero[string]()                           // Not zero value
 validation.NotZeroable[time.Time]()                    // For types with IsZero() method
-validation.OneOf[string]("admin", "user", "guest")     // Allowed values
-validation.NotOneOf[string]("root", "admin")           // Disallowed values
+validation.OneOf[string]("admin", "user", "guest")     // Value must be one of specified values
+validation.NotOneOf[string]("root", "admin")           // Value must not be one of specified values
 
 // Logical operators
 validation.RuleNot(validation.NotZero[string]())       // Negate a rule
@@ -159,8 +159,8 @@ validation.SlicesLength[string](5)                       // Exact length
 validation.SlicesInBetweenLength[string](1, 10)         // Length range
 validation.SlicesUnique[string]()                       // All elements unique
 validation.SlicesContains[string]("required")           // Contains value
-validation.SlicesOneOf[string]("a", "b", "c")           // Element allowed values
-validation.SlicesNotOneOf[string]("x", "y")             // Element disallowed values
+validation.SlicesOneOf[string]("a", "b", "c")           // Elements must be one of specified values
+validation.SlicesNotOneOf[string]("x", "y")             // Elements must not be one of specified values
 validation.SlicesAtIndex(1, validation.NotZero[string]()) // Element at index 
 
 // Validate each element
@@ -181,10 +181,10 @@ validation.MapsLengthBetween[string, string](1, 10)     // Range of key count
 validation.MapsKey[string, string]("key",               // Validate specific key
     validation.NotZero[string](),
 )
-validation.MapsKeysOneOf[string, string]("a", "b")      // Allowed keys
-validation.MapsKeysNotOneOf[string, string]("x")        // Disallowed keys
-validation.MapsValuesOneOf[string, string]("y", "z")    // Allowed values
-validation.MapsValuesNotOneOf[string, string]("bad")    // Disallowed values
+validation.MapsKeysOneOf[string, string]("a", "b")      // Keys must be one of specified values
+validation.MapsKeysNotOneOf[string, string]("x")        // Keys must not be one of specified values
+validation.MapsValuesOneOf[string, string]("y", "z")    // Values must be one of specified values
+validation.MapsValuesNotOneOf[string, string]("bad")    // Values must not be one of specified values
 
 // Validate each key-value pair
 validation.MapsForEach(func(key, value string) *validation.Error {
