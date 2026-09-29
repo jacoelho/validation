@@ -1,3 +1,3 @@
-module github.com/jacoelho/validation/v2
+module github.com/jacoelho/validation
 
 go 1.27

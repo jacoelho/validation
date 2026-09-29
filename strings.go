@@ -2,6 +2,7 @@ package validation
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -32,6 +33,26 @@ func NotEmpty[T ~string]() Rule[T] {
 	return func(value T) error {
 		if len(value) == 0 {
 			return NewViolation(CodeNotEmpty, nil)
+		}
+		return nil
+	}
+}
+
+// NotBlank rejects empty and Unicode whitespace-only strings.
+func NotBlank[T ~string]() Rule[T] {
+	return func(value T) error {
+		if strings.TrimSpace(string(value)) == "" {
+			return NewViolation(CodeNotBlank, nil)
+		}
+		return nil
+	}
+}
+
+// Trimmed rejects leading or trailing Unicode whitespace without changing input.
+func Trimmed[T ~string]() Rule[T] {
+	return func(value T) error {
+		if strings.TrimSpace(string(value)) != string(value) {
+			return NewViolation(CodeTrimmed, nil)
 		}
 		return nil
 	}
@@ -161,6 +182,20 @@ func HasSuffix[T ~string](suffix T) Rule[T] {
 	return func(value T) error {
 		if !strings.HasSuffix(string(value), want) {
 			return NewViolation(CodeSuffix, nil)
+		}
+		return nil
+	}
+}
+
+// Match requires a match by the caller's compiled expression. Anchor the
+// expression when the entire value must match.
+func Match[T ~string](pattern *regexp.Regexp) Rule[T] {
+	if pattern == nil {
+		configurationError("Match")
+	}
+	return func(value T) error {
+		if !pattern.MatchString(string(value)) {
+			return NewViolation(CodeMatch, nil)
 		}
 		return nil
 	}

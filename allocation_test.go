@@ -5,7 +5,7 @@ package validation_test
 import (
 	"testing"
 
-	v "github.com/jacoelho/validation/v2"
+	v "github.com/jacoelho/validation"
 )
 
 func TestAllocValidCore(t *testing.T) {
@@ -40,5 +40,32 @@ func TestAllocSuccessfulLastAlternative(t *testing.T) {
 	})
 	if allocs != 0 || factoryCalls != 0 {
 		t.Fatalf("allocs/op=%v factory calls=%d", allocs, factoryCalls)
+	}
+}
+
+func TestAllocNewSimpleRules(t *testing.T) {
+	notBlank := v.NotBlank[string]()
+	trimmed := v.Trimmed[string]()
+	integerRule := v.MultipleOf(5)
+	floatRule := v.FloatMultipleOf(0.25, 0.001)
+	for _, test := range []struct {
+		name  string
+		check func() error
+	}{
+		{"not blank", func() error { return notBlank("Ada") }},
+		{"trimmed", func() error { return trimmed("Ada") }},
+		{"integer multiple", func() error { return integerRule(10) }},
+		{"float multiple", func() error { return floatRule(0.5) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			allocs := testing.AllocsPerRun(1000, func() {
+				if err := test.check(); err != nil {
+					panic(err)
+				}
+			})
+			if allocs != 0 {
+				t.Fatalf("valid allocs/op = %v, want 0", allocs)
+			}
+		})
 	}
 }

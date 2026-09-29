@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	v "github.com/jacoelho/validation/v2"
+	v "github.com/jacoelho/validation"
 )
 
 func TestConcurrentRuleReuse(t *testing.T) {

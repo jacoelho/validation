@@ -5,11 +5,37 @@ import (
 	"testing"
 	"time"
 
-	validation "github.com/jacoelho/validation/v2"
+	validation "github.com/jacoelho/validation"
 )
 
 func primitiveFixedTime(hour int) time.Time {
 	return time.Date(2026, time.September, 29, hour, 0, 0, 0, time.UTC)
+}
+
+func TestTimeLayout(t *testing.T) {
+	type timestamp string
+	rfc3339 := validation.Time[timestamp](time.RFC3339)
+	for _, value := range []timestamp{"2026-09-29T08:30:00Z", "2026-09-29T09:30:00.123+01:00"} {
+		if err := rfc3339(value); err != nil {
+			t.Fatalf("%q should parse as RFC 3339: %v", value, err)
+		}
+	}
+	for _, value := range []timestamp{"", "2026-09-29", "2026-09-29T08:30:00", "2026-02-30T08:30:00Z"} {
+		requirePrimitiveCodes(t, rfc3339(value), validation.CodeTime)
+	}
+	if err := validation.Time[string]("2006-01-02")("2026-09-29"); err != nil {
+		t.Fatalf("date-only layout should parse: %v", err)
+	}
+	if err := validation.Time[string]("15:04")("08:30"); err != nil {
+		t.Fatalf("time-only layout should parse: %v", err)
+	}
+	requirePrimitiveCodes(t, validation.Time[string]("2006-01-02")("08:30"), validation.CodeTime)
+	defer func() {
+		if got, ok := recover().(*validation.ConfigurationError); !ok || got.Constructor() != "Time" {
+			t.Fatalf("empty layout panic = %#v", got)
+		}
+	}()
+	validation.Time[string]("")
 }
 
 func TestTimeRelationsAtEqualInstant(t *testing.T) {

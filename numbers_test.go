@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	validation "github.com/jacoelho/validation/v2"
+	validation "github.com/jacoelho/validation"
 )
 
 func primitiveIssueCodes(err error) []validation.Code {
@@ -59,6 +59,89 @@ func TestNumericBounds(t *testing.T) {
 				return
 			}
 			requirePrimitiveCodes(t, err, tt.want)
+		})
+	}
+}
+
+func TestMultipleOf(t *testing.T) {
+	type count int64
+	rule := validation.MultipleOf(count(-3))
+	for _, value := range []count{-6, 0, 6} {
+		if err := rule(value); err != nil {
+			t.Fatalf("%d should be a multiple of -3: %v", value, err)
+		}
+	}
+	requirePrimitiveCodes(t, rule(7), validation.CodeMultipleOf)
+	if err := validation.MultipleOf(int64(-1 << 63))(int64(-1 << 63)); err != nil {
+		t.Fatalf("minimum int64 should be divisible by itself: %v", err)
+	}
+	if err := validation.MultipleOf(uint64(3))(^uint64(0)); err != nil {
+		t.Fatalf("maximum uint64 should be divisible by 3: %v", err)
+	}
+	defer func() {
+		if got, ok := recover().(*validation.ConfigurationError); !ok || got.Constructor() != "MultipleOf" {
+			t.Fatalf("zero base panic = %#v", got)
+		}
+	}()
+	validation.MultipleOf(0)
+}
+
+func TestFloatMultipleOf(t *testing.T) {
+	type ratio float32
+	for _, test := range []struct {
+		name  string
+		value float64
+		want  validation.Code
+	}{
+		{"decimal rounding", 0.3, ""},
+		{"zero", 0, ""},
+		{"negative value", -0.3, ""},
+		{"outside tolerance", 0.31, validation.CodeMultipleOf},
+		{"NaN", math.NaN(), validation.CodeMultipleOf},
+		{"positive infinity", math.Inf(1), validation.CodeMultipleOf},
+		{"negative infinity", math.Inf(-1), validation.CodeMultipleOf},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validation.FloatMultipleOf(0.1, 1e-12)(test.value)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("%v should pass: %v", test.value, err)
+				}
+			} else {
+				requirePrimitiveCodes(t, err, test.want)
+			}
+		})
+	}
+	if err := validation.FloatMultipleOf(ratio(-0.25), ratio(1e-6))(ratio(0.5)); err != nil {
+		t.Fatalf("named float32 with negative base should pass: %v", err)
+	}
+	boundary := validation.FloatMultipleOf(0.25, 0.03125)
+	if err := boundary(0.53125); err != nil {
+		t.Fatalf("distance equal to tolerance should pass: %v", err)
+	}
+	requirePrimitiveCodes(t, boundary(0.5625), validation.CodeMultipleOf)
+	requirePrimitiveCodes(t, validation.FloatMultipleOf(0.1, 0)(0.3), validation.CodeMultipleOf)
+}
+
+func TestFloatMultipleOfConfiguration(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		make func()
+	}{
+		{"zero base", func() { validation.FloatMultipleOf(0.0, 0.0) }},
+		{"NaN base", func() { validation.FloatMultipleOf(math.NaN(), 0.0) }},
+		{"infinite base", func() { validation.FloatMultipleOf(math.Inf(1), 0.0) }},
+		{"negative tolerance", func() { validation.FloatMultipleOf(1.0, -0.1) }},
+		{"NaN tolerance", func() { validation.FloatMultipleOf(1.0, math.NaN()) }},
+		{"infinite tolerance", func() { validation.FloatMultipleOf(1.0, math.Inf(1)) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if got, ok := recover().(*validation.ConfigurationError); !ok || got.Constructor() != "FloatMultipleOf" {
+					t.Fatalf("configuration panic = %#v", got)
+				}
+			}()
+			test.make()
 		})
 	}
 }

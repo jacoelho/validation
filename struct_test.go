@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	v "github.com/jacoelho/validation/v2"
+	v "github.com/jacoelho/validation"
 )
 
 func TestNestedStructAllErrors(t *testing.T) {

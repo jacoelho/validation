@@ -57,6 +57,42 @@ func rangeBounds[T any](code Code, min, max T) error {
 	)
 }
 
+// MultipleOf validates that an integer is divisible by a nonzero base.
+func MultipleOf[T Integer](base T) Rule[T] {
+	if base == 0 {
+		configurationError("MultipleOf")
+	}
+	return func(value T) error {
+		if value%base != 0 {
+			return NewViolation(CodeMultipleOf, nil)
+		}
+		return nil
+	}
+}
+
+// FloatMultipleOf validates distance to the nearest multiple of base.
+// Tolerance is an absolute distance in the input's units.
+func FloatMultipleOf[T Float](base, tolerance T) Rule[T] {
+	absoluteBase := math.Abs(float64(base))
+	allowedDistance := float64(tolerance)
+	if absoluteBase == 0 || math.IsNaN(absoluteBase) || math.IsInf(absoluteBase, 0) ||
+		allowedDistance < 0 || math.IsNaN(allowedDistance) || math.IsInf(allowedDistance, 0) {
+		configurationError("FloatMultipleOf")
+	}
+	return func(value T) error {
+		number := float64(value)
+		if math.IsNaN(number) || math.IsInf(number, 0) {
+			return NewViolation(CodeMultipleOf, nil)
+		}
+		remainder := math.Abs(math.Mod(number, absoluteBase))
+		distanceToMultiple := math.Min(remainder, absoluteBase-remainder)
+		if distanceToMultiple > allowedDistance {
+			return NewViolation(CodeMultipleOf, nil)
+		}
+		return nil
+	}
+}
+
 // Min validates that value is greater than or equal to min.
 func Min[T Number](min T) Rule[T] {
 	numberBound("Min", min)

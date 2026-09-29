@@ -2,6 +2,19 @@ package validation
 
 import "time"
 
+// Time checks whether a string can be parsed with a Go time layout.
+func Time[T ~string](layout string) Rule[T] {
+	if layout == "" {
+		configurationError("Time")
+	}
+	return func(value T) error {
+		if _, err := time.Parse(layout, string(value)); err != nil {
+			return NewViolation(CodeTime, nil)
+		}
+		return nil
+	}
+}
+
 // TimeBefore validates that value is strictly before other.
 func TimeBefore(other time.Time) Rule[time.Time] {
 	return func(value time.Time) error {

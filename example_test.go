@@ -3,7 +3,7 @@ package validation_test
 import (
 	"fmt"
 
-	v "github.com/jacoelho/validation/v2"
+	v "github.com/jacoelho/validation"
 )
 
 func Example_nested() {

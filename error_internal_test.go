@@ -107,7 +107,7 @@ func TestWalkIssuesRetainedPathsAndRepeatedIdentity(t *testing.T) {
 	}
 }
 
-func TestAT_ERRORS_009_ErrorTreeContract(t *testing.T) {
+func TestErrorTreeContract(t *testing.T) {
 	shared := errors.New("same sentinel")
 	left := at(Segment{Kind: FieldSegment, Name: "left"}, shared)
 	right := at(Segment{Kind: FieldSegment, Name: "right"}, shared)

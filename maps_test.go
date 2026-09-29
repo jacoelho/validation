@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/jacoelho/validation/v2"
+	"github.com/jacoelho/validation"
 )
 
 type mapIssue struct {

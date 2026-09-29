@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	v "github.com/jacoelho/validation/v2"
+	v "github.com/jacoelho/validation"
 )
 
 type opaqueError struct{ text string }

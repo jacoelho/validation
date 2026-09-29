@@ -2,9 +2,10 @@ package validation_test
 
 import (
 	"errors"
+	"regexp"
 	"testing"
 
-	validation "github.com/jacoelho/validation/v2"
+	validation "github.com/jacoelho/validation"
 )
 
 func TestStringByteAndRuneLengths(t *testing.T) {
@@ -67,6 +68,62 @@ func TestStringInvalidUTF8AndPredicates(t *testing.T) {
 			requirePrimitiveCodes(t, err, test.want)
 		})
 	}
+}
+
+func TestWhitespaceRules(t *testing.T) {
+	type label string
+	notBlank := validation.NotBlank[label]()
+	trimmed := validation.Trimmed[label]()
+	for _, value := range []label{"", " \t\n", "\u00a0"} {
+		requirePrimitiveCodes(t, notBlank(value), validation.CodeNotBlank)
+	}
+	for _, value := range []label{"name", "name with spaces", "  name  "} {
+		if err := notBlank(value); err != nil {
+			t.Fatalf("%q should not be blank: %v", value, err)
+		}
+	}
+	for _, value := range []label{"", "name", "name with spaces"} {
+		if err := trimmed(value); err != nil {
+			t.Fatalf("%q should be trimmed: %v", value, err)
+		}
+	}
+	for _, value := range []label{" name", "name\u00a0", "\tname\n"} {
+		requirePrimitiveCodes(t, trimmed(value), validation.CodeTrimmed)
+	}
+	invalidUTF8 := label(string([]byte{0xff}))
+	if err := notBlank(invalidUTF8); err != nil {
+		t.Fatalf("UTF-8 validation should remain separate: %v", err)
+	}
+	requirePrimitiveCodes(t, validation.UTF8[label]()(invalidUTF8), validation.CodeUTF8)
+	combined := validation.All(
+		validation.NotBlank[string](),
+		validation.Trimmed[string](),
+		validation.Match[string](regexp.MustCompile(`^[A-Z]+$`)),
+	)
+	requirePrimitiveCodes(t, combined(" "), validation.CodeNotBlank, validation.CodeTrimmed, validation.CodeMatch)
+}
+
+func TestMatch(t *testing.T) {
+	type label string
+	containsDigits := validation.Match[label](regexp.MustCompile(`[0-9]+`))
+	if err := containsDigits("item42end"); err != nil {
+		t.Fatalf("substring should match: %v", err)
+	}
+	requirePrimitiveCodes(t, containsDigits("item"), validation.CodeMatch)
+	wholeDigits := validation.Match[label](regexp.MustCompile(`^[0-9]+$`))
+	requirePrimitiveCodes(t, wholeDigits("item42"), validation.CodeMatch)
+	if err := wholeDigits("42"); err != nil {
+		t.Fatalf("anchored expression should match entire input: %v", err)
+	}
+	if err := validation.Match[string](regexp.MustCompile(`^$`))(""); err != nil {
+		t.Fatalf("empty input should follow the pattern: %v", err)
+	}
+	defer func() {
+		if got, ok := recover().(*validation.ConfigurationError); !ok || got.Constructor() != "Match" {
+			t.Fatalf("nil pattern panic = %#v", got)
+		}
+	}()
+	validation.Match[string](nil)
 }
 
 func TestStringLengthDiagnostics(t *testing.T) {

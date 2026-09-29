@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	v "github.com/jacoelho/validation/v2"
+	v "github.com/jacoelho/validation"
 )
 
 func assertIssues(t *testing.T, err error, wantCodes []v.Code, wantPaths []string) {

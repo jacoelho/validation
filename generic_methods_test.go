@@ -3,7 +3,7 @@ package validation_test
 import (
 	"testing"
 
-	validation "github.com/jacoelho/validation/v2"
+	validation "github.com/jacoelho/validation"
 )
 
 func TestGenericMethodFieldAndProject(t *testing.T) {
