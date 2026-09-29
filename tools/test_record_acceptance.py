@@ -14,7 +14,13 @@ def native_record(goos: str = "darwin", goarch: str = "arm64") -> dict:
         "spec_sha256": "spec-digest",
         "feature_sha256": {"features/example.feature": "feature-digest"},
     }
-    repository = {"commit": "a" * 40, "dirty": False}
+    repository = {
+        "commit": "a" * 40,
+        "commit_after": "a" * 40,
+        "dirty": False,
+        "dirty_before": False,
+        "dirty_after": False,
+    }
     environment = {
         "go_version": "go1.27.0",
         "goos": goos,
@@ -73,7 +79,28 @@ def native_record(goos: str = "darwin", goarch: str = "arm64") -> dict:
         "source": source,
         "repository": repository,
         "environment": environment,
-        "checks": {"local_complete": True, "native_gates_complete": True},
+        "bindings": {
+            "manifest_schema_valid": True,
+            "bound": 1,
+            "unbound": 0,
+            "invalid_cases": 0,
+        },
+        "cases": [{
+            "key": "features/example.feature:AT-EXAMPLE:-",
+            "binding_status": "bound",
+            "result": "passed",
+            "test": "TestExample",
+            "run_index": 0,
+        }],
+        "runs": [{"status": "passed", "timed_out": False, "targets": {"TestExample": {"status": "passed"}}}],
+        "checks": {
+            "local_complete": True,
+            "native_gates_complete": True,
+            "tests_complete": True,
+            "worktree_clean": True,
+            "source_stable": True,
+            "metadata_errors": [],
+        },
         "native_gates": native_gates,
     }
 
@@ -161,9 +188,28 @@ class NativeEvidenceTests(unittest.TestCase):
             {"go_version": "go1.27.0", "goos": "linux", "goarch": "amd64"},
             {"go_version": "go1.27.0", "goos": "linux", "goarch": "arm64"},
         ]
-        gate = acceptance.build_matrix_gate(current, [linux], required)
+        gate = acceptance.build_matrix_gate(current, [linux], required, {"features/example.feature:AT-EXAMPLE:-"})
         self.assertFalse(gate["complete"])
         self.assertEqual(gate["missing"], [required[2]])
+
+    def test_matrix_rejects_missing_or_failed_mapped_case(self) -> None:
+        expected = {"features/example.feature:AT-EXAMPLE:-"}
+        current = native_record()
+        required = [{"go_version": "go1.27.0", "goos": "darwin", "goarch": "arm64"}]
+        for mutation in (
+            lambda report: report["cases"].clear(),
+            lambda report: report["cases"][0].update(result="skipped"),
+            lambda report: report["runs"][0]["targets"]["TestExample"].update(status="failed"),
+            lambda report: report["cases"][0].update(run_index=9),
+            lambda report: report["repository"].update(dirty_after=True),
+            lambda report: report["repository"].update(commit_after="b" * 40),
+        ):
+            with self.subTest(mutation=mutation):
+                record = copy.deepcopy(current)
+                mutation(record)
+                gate = acceptance.build_matrix_gate(record, [], required, expected)
+                self.assertFalse(gate["complete"])
+                self.assertEqual(gate["rejected"][0]["reason"], "mapped case evidence is incomplete")
 
 
 if __name__ == "__main__":

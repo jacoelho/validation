@@ -550,10 +550,62 @@ def local_complete(report: dict[str, Any]) -> tuple[bool, list[str]]:
     return not reasons, reasons
 
 
+def mapped_cases_valid(record: dict[str, Any], expected_keys: set[str]) -> bool:
+    bindings = record.get("bindings")
+    checks = record.get("checks")
+    repository = record.get("repository")
+    cases = record.get("cases")
+    runs = record.get("runs")
+    if not all(isinstance(value, dict) for value in (bindings, checks, repository)) or not isinstance(cases, list) or not isinstance(runs, list):
+        return False
+    if (
+        not isinstance(repository.get("commit"), str)
+        or repository.get("commit_after") != repository.get("commit")
+        or repository.get("dirty") is not False
+        or repository.get("dirty_before") is not False
+        or repository.get("dirty_after") is not False
+        or bindings.get("manifest_schema_valid") is not True
+        or bindings.get("bound") != len(expected_keys)
+        or bindings.get("unbound") != 0
+        or bindings.get("invalid_cases") != 0
+        or checks.get("tests_complete") is not True
+        or checks.get("worktree_clean") is not True
+        or checks.get("source_stable") is not True
+        or checks.get("metadata_errors") != []
+    ):
+        return False
+    keys: set[str] = set()
+    for case in cases:
+        if not isinstance(case, dict) or not isinstance(case.get("key"), str):
+            return False
+        key = case["key"]
+        if key in keys or case.get("binding_status") != "bound" or case.get("result") != "passed":
+            return False
+        keys.add(key)
+    if keys != expected_keys or not runs:
+        return False
+    for run in runs:
+        if not isinstance(run, dict) or run.get("status") != "passed" or run.get("timed_out") is True:
+            return False
+        targets = run.get("targets")
+        if not isinstance(targets, dict) or not targets or any(
+            not isinstance(target, dict) or target.get("status") != "passed"
+            for target in targets.values()
+        ):
+            return False
+    for case in cases:
+        index = case.get("run_index")
+        test = case.get("test")
+        if type(index) is not int or index < 0 or index >= len(runs) or not isinstance(test, str) or test not in runs[index]["targets"]:
+            return False
+    return True
+
+
 def build_matrix_gate(
     current: dict[str, Any],
     previous: list[dict[str, Any]],
     required: list[dict[str, str]],
+    expected_case_keys: set[str],
     *,
     include_current: bool = True,
 ) -> dict[str, Any]:
@@ -580,6 +632,7 @@ def build_matrix_gate(
             "source_match": record.get("source", {}).get("spec_sha256") == current_spec.get("spec_sha256")
             and record.get("source", {}).get("feature_sha256") == current_spec.get("feature_sha256"),
             "local_complete": bool(record.get("checks", {}).get("local_complete")),
+            "mapped_cases_complete": mapped_cases_valid(record, expected_case_keys),
             "native_gates_complete": bool(record.get("checks", {}).get("native_gates_complete")) and gate_valid,
         }
         observed.append(identity)
@@ -590,6 +643,8 @@ def build_matrix_gate(
             rejected.append({**identity, "reason": "implementation commit differs"})
         elif not identity["source_match"]:
             rejected.append({**identity, "reason": "specification or feature hash differs"})
+        elif not identity["mapped_cases_complete"]:
+            rejected.append({**identity, "reason": "mapped case evidence is incomplete"})
         elif not identity["local_complete"] or not identity["native_gates_complete"]:
             rejected.append({**identity, "reason": "local evidence is incomplete"})
         else:
@@ -878,7 +933,8 @@ def main() -> int:
     report["checks"]["local_complete"] = complete_local
     report["checks"]["local_reasons"] = local_reasons
     report["matrix"] = build_matrix_gate(
-        report, previous_records, required_matrix, include_current=not args.aggregate_only
+        report, previous_records, required_matrix, {case_key(case) for case in cases},
+        include_current=not args.aggregate_only
     )
     if args.aggregate_only:
         release_reasons = []
