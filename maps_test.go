@@ -183,7 +183,7 @@ func TestMapSuccessfulValidationDoesNotCallOrderingCallbacks(t *testing.T) {
 		},
 	}
 	values := make(map[string]int, 1000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		values[strconv.Itoa(i)] = i
 	}
 	rule := validation.MapValues[map[string]int](order, func(int) error { return nil })
