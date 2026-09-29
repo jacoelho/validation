@@ -48,7 +48,7 @@ func main() {
 ```
 
 ```text
-$.name: not_blank; $.age: min
+$.name: must not be blank; $.age: must be at least 18
 not_blank at $.name
 min at $.age
 ```
@@ -57,7 +57,63 @@ min at $.age
 
 `Project` adapts a rule to a parent type without adding a path segment.
 
-`Format` prints paths and codes without rejected values or cause messages. The `formatLines` function shows another representation: `WalkIssues` yields each failure in rule order. `Issues(err)` collects the same failures into an owned slice. Each issue has a `Path []Segment`, a `Code`, and an `Err` that may wrap a cause; `errors.Is` and `errors.As` inspect the returned error tree.
+`Format` and the returned error’s `Error` method print paths and readable failure reasons, including configured bounds, lengths, patterns, and multiples. Rejected values and cause messages are omitted; length failures include the actual length. Unknown custom codes and external failures retain their code as the message. Machine-readable codes remain available through `WalkIssues` and `Issues`. The `formatLines` function shows another representation: `WalkIssues` yields each failure in rule order. `Issues(err)` collects the same failures into an owned slice. Each issue has a `Path []Segment`, a `Code`, and an `Err` that may wrap a cause; `errors.Is` and `errors.As` inspect the returned error tree.
+
+## Custom messages and localisation
+
+Errors own failure codes and parameters; applications own localisation and presentation. `Parameterized` is the optional shared contract for built-in and custom errors:
+
+```go
+type Parameterized interface {
+    error
+    Code() Code
+    Parameters() map[string]any
+}
+```
+
+`Parameters()` returns nil for no parameters, otherwise a fresh map. Values retain their original types and precision. Referenced values must be immutable or defensively copied by the error owner. Typed accessors remain available; parameter maps are derived from the same fields.
+
+Use `WalkIssues` to format failures with your own code or localisation library:
+
+```go
+failure := v.Min(2).Field("bar", func(n int) int { return n })(1)
+for issue := range v.WalkIssues(failure) {
+    message := v.DefaultMessage(issue)
+    if detail, ok := issue.Err.(v.Parameterized); ok && issue.Code == v.CodeMin {
+        message = fmt.Sprintf("deve ser pelo menos %v", detail.Parameters()["minimum"])
+    }
+    fmt.Printf("%s: %s\n", v.FormatPath(issue.Path), message)
+}
+// $.bar: deve ser pelo menos 2
+```
+
+`Format` remains the built-in English formatter. `DefaultMessage(issue)` returns its message without a path, for optional fallback. Paths belong to issues, so one error can appear at multiple locations. The library stores no locale and imposes no template syntax or formatter interface.
+
+| Error type | Named parameters |
+| --- | --- |
+| `BoundsError[T]` | `minimum`, `minimum_inclusive` when a lower bound exists; `maximum`, `maximum_inclusive` when an upper bound exists |
+| `LengthError` | `actual`, `minimum`, `unit`; `maximum` when present |
+| `MultipleOfError[T]` | `base`; `tolerance` for float rules, including zero tolerance |
+| `TextError` | `constraint`: substring, prefix, suffix, regexp, or time layout, identified by code |
+| `DuplicateError` | `first_index` |
+| `IndexError` | `index`, `length` |
+| `Violation` | None |
+
+Byte text constraints preserve their exact bytes in a string. Length units are stable `LengthUnit` values for the application to translate.
+
+A custom error can supply any number of named parameters:
+
+```go
+type QuotaError struct { Limit int }
+
+func (e QuotaError) Error() string { return "upload quota exceeded" }
+func (e QuotaError) Code() v.Code { return "upload_quota" }
+func (e QuotaError) Parameters() map[string]any {
+    return map[string]any{"limit": e.Limit}
+}
+```
+
+Return it from a `Rule[T]` or `Check` failure factory. `WalkIssues` preserves the code, parameters, and error identity; ordinary errors and coded errors without parameters still work. The default formatter prints unknown custom codes and omits cause messages.
 
 ## Implement a validation interface
 
@@ -91,7 +147,7 @@ func main() {
 ```
 
 ```text
-$.name: not_blank
+$.name: must not be blank
 ```
 
 The application owns this interface. Calling `Validate` runs the same rule; the library does not invoke the method automatically.
@@ -128,8 +184,8 @@ func main() {
 
 ```text
 true
-$: min
-$: required
+$: must be at least 18
+$: value is required
 ```
 
 `OptionalValue` skips an absent value. `RequiredValue` reports `required` for absence; when the value is present, both methods run `Min`, even when age is zero. For pointers, `OptionalPtr` skips nil; `RequiredPtr` reports `required` for nil without calling its child. `AtIndex` reports an out-of-range index without calling its child. None of these guards stops independent sibling rules.
@@ -155,7 +211,7 @@ func main() {
 ```
 
 ```text
-$["east"]: min; $["west"]: min
+$["east"]: must be at least 1; $["west"]: must be at least 1
 ```
 
 Only failing key groups are sorted. `MapKeys` checks existing keys; `MapEach` checks typed key/value entries. To check one specified key, use `MapRequiredKey` to report absence or `MapOptionalKey` to validate it when present and skip it when absent. `Each` applies rules to slice elements, adding their indices to failure paths.
@@ -189,8 +245,8 @@ func main() {
 ```
 
 ```text
-$: trimmed; $: match
-$: multiple_of
+$: must not have leading or trailing whitespace; $: must match pattern "^[A-Z][a-z]+$"
+$: must be a multiple of 5
 true
 true
 ```

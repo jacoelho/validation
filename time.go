@@ -1,6 +1,8 @@
 package validation
 
-import "time"
+import (
+	"time"
+)
 
 // Time checks whether a string can be parsed with a Go time layout.
 func Time[T ~string](layout string) Rule[T] {
@@ -9,7 +11,7 @@ func Time[T ~string](layout string) Rule[T] {
 	}
 	return func(value T) error {
 		if _, err := time.Parse(layout, string(value)); err != nil {
-			return NewViolation(CodeTime, nil)
+			return &TextError{code: CodeTime, constraint: layout}
 		}
 		return nil
 	}

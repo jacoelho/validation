@@ -1,6 +1,8 @@
 package validation
 
-import "math"
+import (
+	"math"
+)
 
 // Signed is the set of signed integer types accepted by numeric rules.
 type Signed interface {
@@ -64,7 +66,7 @@ func MultipleOf[T Integer](base T) Rule[T] {
 	}
 	return func(value T) error {
 		if value%base != 0 {
-			return NewViolation(CodeMultipleOf, nil)
+			return &MultipleOfError[T]{base: base}
 		}
 		return nil
 	}
@@ -82,12 +84,12 @@ func FloatMultipleOf[T Float](base, tolerance T) Rule[T] {
 	return func(value T) error {
 		number := float64(value)
 		if math.IsNaN(number) || math.IsInf(number, 0) {
-			return NewViolation(CodeMultipleOf, nil)
+			return &MultipleOfError[T]{base: base, tolerance: tolerance, hasTolerance: true}
 		}
 		remainder := math.Abs(math.Mod(number, absoluteBase))
 		distanceToMultiple := math.Min(remainder, absoluteBase-remainder)
 		if distanceToMultiple > allowedDistance {
-			return NewViolation(CodeMultipleOf, nil)
+			return &MultipleOfError[T]{base: base, tolerance: tolerance, hasTolerance: true}
 		}
 		return nil
 	}

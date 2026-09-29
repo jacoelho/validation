@@ -224,7 +224,7 @@ func TestFormatDoesNotCallExternalErrorOrShowCause(t *testing.T) {
 		v.Field("password", func(int) int { return 0 }, v.Rule[int](func(int) error { return &opaqueError{secret} })),
 		v.Rule[int](func(int) error { return v.NewViolation(v.CodeNotEmpty, errors.New(secret)) }),
 	)
-	if got := v.Format(rule(0)); got != "$.password: external; $: not_empty" || strings.Contains(got, secret) {
+	if got := v.Format(rule(0)); got != "$.password: external; $: must not be empty" || strings.Contains(got, secret) {
 		t.Fatalf("unsafe format = %q", got)
 	}
 }
