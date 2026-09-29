@@ -1,97 +1,124 @@
 package validation_test
 
 import (
+	"runtime"
+	"strconv"
 	"testing"
 
-	"github.com/jacoelho/validation"
+	v "github.com/jacoelho/validation/v2"
 )
 
+func reportBenchmarkContext(b *testing.B, inputItems int) {
+	b.Helper()
+	b.ReportMetric(float64(inputItems), "input-items")
+	b.Logf("compiler=%s platform=%s/%s input-items=%d", runtime.Version(), runtime.GOOS, runtime.GOARCH, inputItems)
+}
+
 func BenchmarkValidation(b *testing.B) {
-	type User struct {
-		Name     string
-		Age      int
-		Email    string
-		Password string
-		Tags     []string
-		Settings map[string]string
+	type Record struct {
+		Name  string
+		Count int
+		Tags  []string
 	}
-
-	validator := validation.Struct(
-		validation.Field("Name", func(u User) string { return u.Name },
-			validation.NotZero[string](),
-			validation.StringsRuneMaxLength[string](50),
-		),
-		validation.Field("Age", func(u User) int { return u.Age },
-			validation.NumbersMin(18),
-			validation.NumbersMax(120),
-		),
-		validation.Field("Email", func(u User) string { return u.Email },
-			validation.NotZero[string](),
-			validation.StringsRuneMaxLength[string](100),
-		),
-		validation.Field("Password", func(u User) string { return u.Password },
-			validation.NotZero[string](),
-			validation.StringsRuneMinLength[string](8),
-		),
-		validation.SliceField("Tags", func(u User) []string { return u.Tags },
-			validation.SlicesMaxLength[string](5),
-			validation.SlicesForEach(
-				validation.NotZero[string](),
-				validation.StringsRuneMaxLength[string](20),
-			),
-		),
-		validation.MapField("Settings", func(u User) map[string]string { return u.Settings },
-			validation.MapsMaxKeys[string, string](5),
-			validation.MapsForEach(
-				func(k, v string) *validation.Error {
-					if v == "" {
-						return &validation.Error{
-							Code:   "empty_value",
-							Field:  k,
-							Params: map[string]any{"key": k},
-						}
-					}
-					return nil
-				},
-			),
-		),
+	input := Record{Name: "ready", Count: 4, Tags: []string{"alpha", "beta"}}
+	inputItems := 3 + len(input.Tags)
+	rule := v.All(
+		v.Field("name", func(r Record) string { return r.Name }, v.NotEmpty[string](), v.RuneMaxLength[string](20)),
+		v.Field("count", func(r Record) int { return r.Count }, v.Min(0), v.Max(10)),
+		v.Field("tags", func(r Record) []string { return r.Tags }, v.Each[[]string](v.NotEmpty[string]())),
 	)
-
-	validUser := User{
-		Name:     "John Doe",
-		Age:      30,
-		Email:    "john@example.com",
-		Password: "secure123",
-		Tags:     []string{"user", "premium"},
-		Settings: map[string]string{
-			"theme": "dark",
-			"lang":  "en",
-		},
-	}
-
-	invalidUser := User{
-		Name:     "",
-		Age:      15,
-		Email:    "invalid-email",
-		Password: "short",
-		Tags:     []string{"", "very_long_tag_that_exceeds_maximum_length"},
-		Settings: map[string]string{
-			"theme": "",
-			"lang":  "en",
-		},
-	}
-
-	b.Run("ValidUser", func(b *testing.B) {
-		b.ResetTimer()
+	b.Run("record-fields-3-tags-2/valid", func(b *testing.B) {
+		b.ReportAllocs()
 		for b.Loop() {
-			_ = validator.Validate(validUser)
+			if err := rule(input); err != nil {
+				b.Fatal(err)
+			}
 		}
+		reportBenchmarkContext(b, inputItems)
 	})
-
-	b.Run("InvalidUser", func(b *testing.B) {
-		b.ResetTimer()
+	b.Run("record-fields-3-tags-2/invalid", func(b *testing.B) {
+		invalid := input
+		invalid.Name = ""
+		b.ReportAllocs()
 		for b.Loop() {
-			_ = validator.Validate(invalidUser)
+			if err := rule(invalid); err == nil {
+				b.Fatal("missing failure")
+			}
 		}
+		reportBenchmarkContext(b, inputItems)
 	})
+	b.Run("record-fields-3-tags-2/reporting", func(b *testing.B) {
+		invalid := input
+		invalid.Name = ""
+		err := rule(invalid)
+		b.ReportAllocs()
+		for b.Loop() {
+			_ = v.Format(err)
+		}
+		reportBenchmarkContext(b, inputItems)
+	})
+}
+
+var constructedBenchmarkRule v.Rule[int]
+
+func BenchmarkConstruction(b *testing.B) {
+	b.Run("membership-4", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			constructedBenchmarkRule = v.All(v.Min(1), v.Max(10), v.OneOf(1, 2, 3, 4))
+		}
+		reportBenchmarkContext(b, 4)
+	})
+}
+
+func BenchmarkTraversal(b *testing.B) {
+	b.Run("issues-2", func(b *testing.B) {
+		rule := v.All(v.NotEmpty[string](), v.RuneMinLength[string](2))
+		err := rule("")
+		b.ReportAllocs()
+		for b.Loop() {
+			if len(v.Issues(err)) != 2 {
+				b.Fatal("lost issues")
+			}
+		}
+		reportBenchmarkContext(b, 2)
+	})
+}
+
+func BenchmarkSliceUnique(b *testing.B) {
+	for _, size := range []int{8, 64, 1024} {
+		b.Run(strconv.Itoa(size), func(b *testing.B) {
+			values := make([]int, size)
+			for i := range values {
+				values[i] = i
+			}
+			rule := v.SliceUnique[[]int]()
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := rule(values); err != nil {
+					b.Fatal(err)
+				}
+			}
+			reportBenchmarkContext(b, size)
+		})
+	}
+}
+
+func BenchmarkValidMap(b *testing.B) {
+	for _, size := range []int{8, 64, 1024, 10000} {
+		b.Run(strconv.Itoa(size), func(b *testing.B) {
+			values := make(map[string]int, size)
+			for i := 0; i < size; i++ {
+				values[strconv.Itoa(i)] = i + 1
+			}
+			rule := v.MapValues[map[string]int](v.StringKeys[string](), v.Positive[int]())
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := rule(values); err != nil {
+					b.Fatal(err)
+				}
+			}
+			reportBenchmarkContext(b, size)
+		})
+	}
 }

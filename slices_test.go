@@ -1,765 +1,261 @@
 package validation_test
 
 import (
+	"errors"
+	"math"
 	"reflect"
 	"testing"
 
-	"github.com/jacoelho/validation"
+	"github.com/jacoelho/validation/v2"
 )
 
-func TestSlicesMinLength(t *testing.T) {
-	rule := validation.SlicesMinLength[string](3)
+type sliceIssue struct {
+	path string
+	code validation.Code
+}
 
-	tests := []struct {
-		name    string
-		value   []string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty slice should fail",
-			value:   []string{},
-			wantErr: true,
-			errCode: "min",
-		},
-		{
-			name:    "slice shorter than minimum should fail",
-			value:   []string{"a", "b"},
-			wantErr: true,
-			errCode: "min",
-		},
-		{
-			name:    "slice equal to minimum should pass",
-			value:   []string{"a", "b", "c"},
-			wantErr: false,
-		},
-		{
-			name:    "slice longer than minimum should pass",
-			value:   []string{"a", "b", "c", "d"},
-			wantErr: false,
-		},
-		{
-			name:    "nil slice should fail",
-			value:   nil,
-			wantErr: true,
-			errCode: "min",
-		},
+func sliceIssues(err error) []sliceIssue {
+	issues := validation.Issues(err)
+	out := make([]sliceIssue, len(issues))
+	for i, issue := range issues {
+		out[i] = sliceIssue{path: validation.FormatPath(issue.Path), code: issue.Code}
 	}
+	return out
+}
 
+func TestSliceLengthRulesUseElementDiagnostics(t *testing.T) {
+	tests := []struct {
+		name   string
+		rule   validation.Rule[[]string]
+		in     []string
+		want   validation.Code
+		min    int
+		max    int
+		hasMax bool
+	}{
+		{name: "exact", rule: validation.SliceLength[[]string](2), in: []string{"a"}, want: validation.CodeLength, min: 2, max: 2, hasMax: true},
+		{name: "minimum", rule: validation.SliceMinLength[[]string](2), in: []string{"a"}, want: validation.CodeMinLength, min: 2},
+		{name: "maximum", rule: validation.SliceMaxLength[[]string](1), in: []string{"a", "b"}, want: validation.CodeMaxLength, min: 0, max: 1, hasMax: true},
+		{name: "between", rule: validation.SliceLengthBetween[[]string](2, 3), in: []string{"a"}, want: validation.CodeLengthBetween, min: 2, max: 3, hasMax: true},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if len(err) > 0 && err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
+			err := tt.rule(tt.in)
+			var detail *validation.LengthError
+			if !errors.As(err, &detail) {
+				t.Fatalf("expected LengthError, got %T", err)
+			}
+			if detail.Code() != tt.want || detail.Actual() != len(tt.in) || detail.Minimum() != tt.min {
+				t.Fatalf("unexpected length detail: code=%q actual=%d minimum=%d", detail.Code(), detail.Actual(), detail.Minimum())
+			}
+			gotMax, got := detail.Maximum()
+			if got != tt.hasMax || got && gotMax != tt.max {
+				t.Fatalf("unexpected maximum: (%d, %t)", gotMax, got)
+			}
+			if detail.Unit() != validation.LengthElements {
+				t.Fatalf("unit = %q, want elements", detail.Unit())
+			}
+			if got := sliceIssues(err); len(got) != 1 || got[0].path != "$" || got[0].code != tt.want {
+				t.Fatalf("issues = %#v", got)
 			}
 		})
 	}
-}
 
-func TestSlicesMaxLength(t *testing.T) {
-	rule := validation.SlicesMaxLength[string](3)
-
-	tests := []struct {
-		name    string
-		value   []string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty slice should pass",
-			value:   []string{},
-			wantErr: false,
-		},
-		{
-			name:    "slice shorter than maximum should pass",
-			value:   []string{"a", "b"},
-			wantErr: false,
-		},
-		{
-			name:    "slice equal to maximum should pass",
-			value:   []string{"a", "b", "c"},
-			wantErr: false,
-		},
-		{
-			name:    "slice longer than maximum should fail",
-			value:   []string{"a", "b", "c", "d"},
-			wantErr: true,
-			errCode: "max",
-		},
-		{
-			name:    "nil slice should pass",
-			value:   nil,
-			wantErr: false,
-		},
+	if validation.SliceLength[[]string](0)(nil) != nil {
+		t.Fatal("nil slice with length zero should pass")
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if len(err) > 0 && err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
+	if validation.SliceMinLength[[]string](1)(nil) == nil {
+		t.Fatal("nil slice should fail a positive minimum")
 	}
 }
 
-func TestSlicesLength(t *testing.T) {
-	rule := validation.SlicesLength[string](3)
-
-	tests := []struct {
-		name    string
-		value   []string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty slice should fail",
-			value:   []string{},
-			wantErr: true,
-			errCode: "length",
-		},
-		{
-			name:    "slice shorter than required should fail",
-			value:   []string{"a", "b"},
-			wantErr: true,
-			errCode: "length",
-		},
-		{
-			name:    "slice of exact length should pass",
-			value:   []string{"a", "b", "c"},
-			wantErr: false,
-		},
-		{
-			name:    "slice longer than required should fail",
-			value:   []string{"a", "b", "c", "d"},
-			wantErr: true,
-			errCode: "length",
-		},
-		{
-			name:    "nil slice should fail",
-			value:   nil,
-			wantErr: true,
-			errCode: "length",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if len(err) > 0 && err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestSlicesInBetweenLength(t *testing.T) {
-	rule := validation.SlicesInBetweenLength[string](2, 4)
-
-	tests := []struct {
-		name    string
-		value   []string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty slice should fail",
-			value:   []string{},
-			wantErr: true,
-			errCode: "between",
-		},
-		{
-			name:    "slice shorter than minimum should fail",
-			value:   []string{"a"},
-			wantErr: true,
-			errCode: "between",
-		},
-		{
-			name:    "slice at minimum should pass",
-			value:   []string{"a", "b"},
-			wantErr: false,
-		},
-		{
-			name:    "slice within range should pass",
-			value:   []string{"a", "b", "c"},
-			wantErr: false,
-		},
-		{
-			name:    "slice at maximum should pass",
-			value:   []string{"a", "b", "c", "d"},
-			wantErr: false,
-		},
-		{
-			name:    "slice longer than maximum should fail",
-			value:   []string{"a", "b", "c", "d", "e"},
-			wantErr: true,
-			errCode: "between",
-		},
-		{
-			name:    "nil slice should fail",
-			value:   nil,
-			wantErr: true,
-			errCode: "between",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if len(err) > 0 && err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestSlicesForEach(t *testing.T) {
-	rule := validation.SlicesForEach(
-		validation.NotZero[string](),
-		validation.StringsRuneMaxLength[string](5),
+func TestSlicesCollectContainerAndElementFailures(t *testing.T) {
+	rule := validation.All(
+		validation.SliceMaxLength[[]string](1),
+		validation.Each[[]string](validation.NotEmpty[string](), validation.RuneMinLength[string](2)),
 	)
-
-	tests := []struct {
-		name    string
-		value   []string
-		wantErr bool
-	}{
-		{
-			name:    "empty slice should pass",
-			value:   []string{},
-			wantErr: false,
-		},
-		{
-			name:    "all valid elements should pass",
-			value:   []string{"a", "bb", "ccc"},
-			wantErr: false,
-		},
-		{
-			name:    "empty element should fail",
-			value:   []string{"a", "", "c"},
-			wantErr: true,
-		},
-		{
-			name:    "element too long should fail",
-			value:   []string{"a", "bb", "cccccc"},
-			wantErr: true,
-		},
-		{
-			name:    "nil slice should pass",
-			value:   nil,
-			wantErr: false,
-		},
+	got := sliceIssues(rule([]string{"", ""}))
+	want := []sliceIssue{
+		{path: "$", code: validation.CodeMaxLength},
+		{path: "$[0]", code: validation.CodeNotEmpty},
+		{path: "$[0]", code: validation.CodeRuneMinLength},
+		{path: "$[1]", code: validation.CodeNotEmpty},
+		{path: "$[1]", code: validation.CodeRuneMinLength},
 	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("issues = %#v, want %#v", got, want)
+	}
+}
 
+func TestEachRunsEveryRuleForEveryElementAndCopiesConfiguration(t *testing.T) {
+	var calls int
+	child := func(value int) error {
+		calls++
+		if value == 0 {
+			return validation.NewViolation(validation.CodeZero, nil)
+		}
+		return nil
+	}
+	rules := []validation.Rule[int]{child}
+	rule := validation.Each[[]int](rules...)
+	rules[0] = nil
+
+	got := sliceIssues(rule([]int{0, 1, 0}))
+	want := []sliceIssue{{path: "$[0]", code: validation.CodeZero}, {path: "$[2]", code: validation.CodeZero}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("issues = %#v, want %#v", got, want)
+	}
+	if calls != 3 {
+		t.Fatalf("child calls = %d, want 3", calls)
+	}
+}
+
+func TestAtIndexGuardsAbsentElementsAndKeepsIndependentRules(t *testing.T) {
+	called := false
+	panicRule := func(int) error {
+		called = true
+		panic("out-of-range child invoked")
+	}
+	rule := validation.All(
+		validation.AtIndex[[]int](3, panicRule),
+		validation.SliceMinLength[[]int](2),
+	)
+	got := sliceIssues(rule([]int{1}))
+	want := []sliceIssue{{path: "$[3]", code: validation.CodeIndexOutOfRange}, {path: "$", code: validation.CodeMinLength}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("issues = %#v, want %#v", got, want)
+	}
+	if called {
+		t.Fatal("out-of-range child was called")
+	}
+}
+
+func TestAtIndexRunsAllChildrenAtAValidIndex(t *testing.T) {
+	var calls [2]int
+	first := func(value string) error {
+		calls[0]++
+		if value == "" {
+			return validation.NewViolation(validation.CodeNotEmpty, nil)
+		}
+		return nil
+	}
+	second := func(value string) error {
+		calls[1]++
+		if len(value) < 2 {
+			return validation.NewViolation(validation.CodeRuneMinLength, nil)
+		}
+		return nil
+	}
+	got := sliceIssues(validation.AtIndex[[]string](1, first, second)([]string{"ok", ""}))
+	want := []sliceIssue{{path: "$[1]", code: validation.CodeNotEmpty}, {path: "$[1]", code: validation.CodeRuneMinLength}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("issues = %#v, want %#v", got, want)
+	}
+	if calls != [2]int{1, 1} {
+		t.Fatalf("calls = %v, want [1 1]", calls)
+	}
+}
+
+func TestSliceMembershipReportsEveryOffendingOccurrence(t *testing.T) {
+	tests := []struct {
+		name  string
+		rule  validation.Rule[[]string]
+		in    []string
+		code  validation.Code
+		paths []string
+	}{
+		{name: "one of", rule: validation.SliceOneOf[[]string]("a", "b"), in: []string{"x", "a", "y", "x"}, code: validation.CodeOneOf, paths: []string{"$[0]", "$[2]", "$[3]"}},
+		{name: "not one of", rule: validation.SliceNotOneOf[[]string]("x"), in: []string{"x", "a", "x"}, code: validation.CodeNotOneOf, paths: []string{"$[0]", "$[2]"}},
+		{name: "empty allowed set", rule: validation.SliceOneOf[[]string](), in: []string{"a", "b"}, code: validation.CodeOneOf, paths: []string{"$[0]", "$[1]"}},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr && err == nil {
-				t.Error("expected error but got nil")
+			got := sliceIssues(tt.rule(tt.in))
+			if len(got) != len(tt.paths) {
+				t.Fatalf("issue count = %d, want %d (%#v)", len(got), len(tt.paths), got)
 			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("expected no error but got %v", err)
-			}
-		})
-	}
-}
-
-func TestSlicesUnique(t *testing.T) {
-	rule := validation.SlicesUnique[string]()
-
-	tests := []struct {
-		name    string
-		value   []string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty slice should pass",
-			value:   []string{},
-			wantErr: false,
-		},
-		{
-			name:    "unique elements should pass",
-			value:   []string{"a", "b", "c"},
-			wantErr: false,
-		},
-		{
-			name:    "duplicate elements should fail",
-			value:   []string{"a", "b", "a"},
-			wantErr: true,
-			errCode: "unique",
-		},
-		{
-			name:    "multiple duplicates should fail",
-			value:   []string{"a", "b", "a", "c", "b"},
-			wantErr: true,
-			errCode: "unique",
-		},
-		{
-			name:    "nil slice should pass",
-			value:   nil,
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if len(err) > 0 && err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestSlicesContains(t *testing.T) {
-	rule := validation.SlicesContains[string]("test")
-
-	tests := []struct {
-		name    string
-		value   []string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty slice should fail",
-			value:   []string{},
-			wantErr: true,
-			errCode: "contains",
-		},
-		{
-			name:    "slice containing value should pass",
-			value:   []string{"a", "test", "c"},
-			wantErr: false,
-		},
-		{
-			name:    "slice without value should fail",
-			value:   []string{"a", "b", "c"},
-			wantErr: true,
-			errCode: "contains",
-		},
-		{
-			name:    "nil slice should fail",
-			value:   nil,
-			wantErr: true,
-			errCode: "contains",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if len(err) > 0 && err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestSlicesOneOf(t *testing.T) {
-	rule := validation.SlicesOneOf[string]("a", "b", "c")
-
-	tests := []struct {
-		name    string
-		value   []string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty slice should pass",
-			value:   []string{},
-			wantErr: false,
-		},
-		{
-			name:    "all allowed values should pass",
-			value:   []string{"a", "b", "c"},
-			wantErr: false,
-		},
-		{
-			name:    "disallowed value should fail",
-			value:   []string{"a", "d", "c"},
-			wantErr: true,
-			errCode: "one_of",
-		},
-		{
-			name:    "nil slice should pass",
-			value:   nil,
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if len(err) > 0 && err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestSlicesNotOneOf(t *testing.T) {
-	rule := validation.SlicesNotOneOf[string]("x", "y", "z")
-
-	tests := []struct {
-		name    string
-		value   []string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty slice should pass",
-			value:   []string{},
-			wantErr: false,
-		},
-		{
-			name:    "no disallowed values should pass",
-			value:   []string{"a", "b", "c"},
-			wantErr: false,
-		},
-		{
-			name:    "disallowed value should fail",
-			value:   []string{"a", "x", "c"},
-			wantErr: true,
-			errCode: "not_one_of",
-		},
-		{
-			name:    "nil slice should pass",
-			value:   nil,
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if len(err) > 0 && err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestSlicesWithDifferentTypes(t *testing.T) {
-	t.Run("int slices", func(t *testing.T) {
-		rule := validation.SlicesMinLength[int](3)
-		value := []int{1, 2, 3}
-		if err := rule(value); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("float slices", func(t *testing.T) {
-		rule := validation.SlicesMaxLength[float64](2)
-		value := []float64{1.1, 2.2}
-		if err := rule(value); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("struct slices", func(t *testing.T) {
-		type Point struct{ X, Y int }
-		rule := validation.SlicesLength[Point](2)
-		value := []Point{{1, 2}, {3, 4}}
-		if err := rule(value); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-}
-
-func TestSlicesErrorParams(t *testing.T) {
-	t.Run("SlicesMinLength error params", func(t *testing.T) {
-		rule := validation.SlicesMinLength[string](3)
-		err := rule([]string{"a", "b"})
-
-		if err == nil {
-			t.Fatal("expected error but got nil")
-		}
-
-		if len(err) == 0 {
-			t.Fatal("expected error but got empty slice")
-		}
-
-		if err[0].Code != "min" {
-			t.Errorf("expected code 'min', got %q", err[0].Code)
-		}
-
-		if err[0].Params["min"] != 3 {
-			t.Errorf("expected min param to be 3, got %v", err[0].Params["min"])
-		}
-
-		if err[0].Params["actual"] != 2 {
-			t.Errorf("expected actual param to be 2, got %v", err[0].Params["actual"])
-		}
-	})
-
-	t.Run("SlicesInBetweenLength error params", func(t *testing.T) {
-		rule := validation.SlicesInBetweenLength[string](2, 4)
-		err := rule([]string{"a"})
-
-		if err == nil {
-			t.Fatal("expected error but got nil")
-		}
-
-		if len(err) == 0 {
-			t.Fatal("expected error but got empty slice")
-		}
-
-		if err[0].Code != "between" {
-			t.Errorf("expected code 'between', got %q", err[0].Code)
-		}
-
-		if err[0].Params["min"] != 2 {
-			t.Errorf("expected min param to be 2, got %v", err[0].Params["min"])
-		}
-
-		if err[0].Params["max"] != 4 {
-			t.Errorf("expected max param to be 4, got %v", err[0].Params["max"])
-		}
-
-		if err[0].Params["actual"] != 1 {
-			t.Errorf("expected actual param to be 1, got %v", err[0].Params["actual"])
-		}
-	})
-}
-
-func TestSlicesAtIndex(t *testing.T) {
-	tests := []struct {
-		name      string
-		index     int
-		rules     []validation.Rule[string]
-		input     []string
-		wantErr   bool
-		errCode   string
-		errField  string
-		errParams map[string]any
-	}{
-		{
-			name:    "valid index with valid value",
-			index:   1,
-			rules:   []validation.Rule[string]{validation.NotZero[string]()},
-			input:   []string{"a", "b", "c"},
-			wantErr: false,
-		},
-		{
-			name:     "valid index with invalid value",
-			index:    1,
-			rules:    []validation.Rule[string]{validation.NotZero[string]()},
-			input:    []string{"a", "", "c"},
-			wantErr:  true,
-			errCode:  "zero",
-			errField: "1",
-		},
-		{
-			name:      "negative index should fail",
-			index:     -1,
-			rules:     []validation.Rule[string]{validation.NotZero[string]()},
-			input:     []string{"a", "b", "c"},
-			wantErr:   true,
-			errCode:   "index",
-			errField:  "-1",
-			errParams: map[string]any{"index": -1},
-		},
-		{
-			name:      "index out of bounds should fail",
-			index:     3,
-			rules:     []validation.Rule[string]{validation.NotZero[string]()},
-			input:     []string{"a", "b", "c"},
-			wantErr:   true,
-			errCode:   "index",
-			errField:  "3",
-			errParams: map[string]any{"index": 3},
-		},
-		{
-			name:  "multiple rules all pass",
-			index: 1,
-			rules: []validation.Rule[string]{
-				validation.NotZero[string](),
-				validation.StringsRuneMaxLength[string](10),
-			},
-			input:   []string{"a", "valid", "c"},
-			wantErr: false,
-		},
-		{
-			name:  "multiple rules first fails",
-			index: 1,
-			rules: []validation.Rule[string]{
-				validation.NotZero[string](),
-				validation.StringsRuneMaxLength[string](10),
-			},
-			input:    []string{"a", "", "c"},
-			wantErr:  true,
-			errCode:  "zero",
-			errField: "1",
-		},
-		{
-			name:  "multiple rules second fails",
-			index: 1,
-			rules: []validation.Rule[string]{
-				validation.NotZero[string](),
-				validation.StringsRuneMaxLength[string](3),
-			},
-			input:    []string{"a", "too long", "c"},
-			wantErr:  true,
-			errCode:  "max",
-			errField: "1",
-		},
-		{
-			name:  "fatal error stops validation",
-			index: 1,
-			rules: []validation.Rule[string]{
-				validation.RuleStopOnError(validation.NotZero[string]()),
-				validation.StringsRuneMaxLength[string](3),
-			},
-			input:    []string{"a", "", "c"},
-			wantErr:  true,
-			errCode:  "zero",
-			errField: "1",
-		},
-		{
-			name:      "empty slice should fail",
-			index:     0,
-			rules:     []validation.Rule[string]{validation.NotZero[string]()},
-			input:     []string{},
-			wantErr:   true,
-			errCode:   "index",
-			errField:  "0",
-			errParams: map[string]any{"index": 0},
-		},
-		{
-			name:      "nil slice should fail",
-			index:     0,
-			rules:     []validation.Rule[string]{validation.NotZero[string]()},
-			input:     nil,
-			wantErr:   true,
-			errCode:   "index",
-			errField:  "0",
-			errParams: map[string]any{"index": 0},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rule := validation.SlicesAtIndex(tt.index, tt.rules...)
-			err := rule(tt.input)
-
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
-					return
-				}
-				if len(err) == 0 {
-					t.Error("expected error, got empty slice")
-					return
-				}
-				if err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-				if err[0].Field != tt.errField {
-					t.Errorf("expected error field %q, got %q", tt.errField, err[0].Field)
-				}
-				if tt.errParams != nil && !reflect.DeepEqual(err[0].Params, tt.errParams) {
-					t.Errorf("expected error params %v, got %v", tt.errParams, err[0].Params)
-				}
-			} else {
-				if len(err) > 0 {
-					t.Errorf("unexpected error: %v", err)
+			for i, issue := range got {
+				if issue.path != tt.paths[i] || issue.code != tt.code {
+					t.Fatalf("issue[%d] = %#v, want path %q code %q", i, issue, tt.paths[i], tt.code)
 				}
 			}
 		})
 	}
 
-	// Test with different types
-	t.Run("different types", func(t *testing.T) {
-		// Test with integers
-		intRule := validation.SlicesAtIndex(1, validation.NumbersMin(10))
-		if err := intRule([]int{5, 15, 20}); err != nil {
-			t.Errorf("unexpected error for valid integer: %v", err)
-		}
-		if err := intRule([]int{5, 8, 20}); err == nil {
-			t.Error("expected error for invalid integer, got nil")
-		}
+	err := validation.SliceContains[[]string]("x")([]string{"a", "b", "c"})
+	got := sliceIssues(err)
+	if !reflect.DeepEqual(got, []sliceIssue{{path: "$", code: validation.CodeContains}}) {
+		t.Fatalf("contains issues = %#v", got)
+	}
+}
 
-		// Test with custom type
-		type Status string
-		statusRule := validation.SlicesAtIndex(1, func(s Status) *validation.Error {
-			if s != Status("active") && s != Status("inactive") {
-				return &validation.Error{
-					Code:   "invalid_status",
-					Params: map[string]any{"value": string(s)},
-				}
-			}
-			return nil
-		})
-		if err := statusRule([]Status{"pending", "active", "inactive"}); err != nil {
-			t.Errorf("unexpected error for valid status: %v", err)
+func TestSliceUniqueReportsEachDuplicateAndEarliestIndex(t *testing.T) {
+	input := []string{"a", "b", "a", "a", "b"}
+	err := validation.SliceUnique[[]string, string]()(input)
+	issues := validation.Issues(err)
+	if got, want := len(issues), 3; got != want {
+		t.Fatalf("issue count = %d, want %d", got, want)
+	}
+	wantPaths := []string{"$[2]", "$[3]", "$[4]"}
+	wantFirst := []int{0, 0, 1}
+	for i, issue := range issues {
+		if got := validation.FormatPath(issue.Path); got != wantPaths[i] || issue.Code != validation.CodeUnique {
+			t.Fatalf("issue[%d] = %s/%q", i, got, issue.Code)
 		}
-		if err := statusRule([]Status{"pending", "invalid", "inactive"}); err == nil {
-			t.Error("expected error for invalid status, got nil")
+		var detail *validation.DuplicateError
+		if !errors.As(issue.Err, &detail) || detail.FirstIndex() != wantFirst[i] {
+			t.Fatalf("issue[%d] duplicate detail = %#v", i, detail)
 		}
-	})
+	}
+	if !reflect.DeepEqual(input, []string{"a", "b", "a", "a", "b"}) {
+		t.Fatal("uniqueness changed the input")
+	}
+}
+
+func TestSliceUniqueUsesGoEqualityForNaNAndSignedZero(t *testing.T) {
+	input := []float64{math.NaN(), math.NaN(), 0, math.Copysign(0, -1)}
+	issues := validation.Issues(validation.SliceUnique[[]float64, float64]()(input))
+	if len(issues) != 1 || validation.FormatPath(issues[0].Path) != "$[3]" {
+		t.Fatalf("issues = %#v", sliceIssues(validation.SliceUnique[[]float64, float64]()(input)))
+	}
+	var detail *validation.DuplicateError
+	if !errors.As(issues[0].Err, &detail) || detail.FirstIndex() != 2 {
+		t.Fatalf("duplicate detail = %#v", detail)
+	}
+}
+
+func TestSliceNamedTypesCompileAndPreserveNestedLocations(t *testing.T) {
+	type Cell string
+	type Row []Cell
+	type Rows []Row
+	rule := validation.Each[Rows](validation.Each[Row](func(value Cell) error {
+		if value == "" {
+			return validation.NewViolation(validation.CodeNotEmpty, nil)
+		}
+		return nil
+	}))
+	got := sliceIssues(rule(Rows{{"ok", "ok"}, {"ok", ""}}))
+	want := []sliceIssue{{path: "$[1][1]", code: validation.CodeNotEmpty}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("issues = %#v, want %#v", got, want)
+	}
+}
+
+func TestSliceConstructorsRejectInvalidConfiguration(t *testing.T) {
+	assertConfigurationPanic(t, func() { validation.SliceLength[[]int](-1) })
+	assertConfigurationPanic(t, func() { validation.SliceLengthBetween[[]int](2, 1) })
+	assertConfigurationPanic(t, func() { validation.AtIndex[[]int](-1) })
+	assertConfigurationPanic(t, func() { validation.Each[[]int](nil) })
+}
+
+func assertConfigurationPanic(t *testing.T, call func()) {
+	t.Helper()
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("expected configuration panic")
+		} else if _, ok := recovered.(*validation.ConfigurationError); !ok {
+			t.Fatalf("panic type = %T, want *ConfigurationError", recovered)
+		}
+	}()
+	call()
 }

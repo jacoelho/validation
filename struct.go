@@ -1,111 +1,94 @@
 package validation
 
-// fieldValidator is a validator for a field of a struct.
-type fieldValidator[T any] interface {
-	ValidateWithPrefix(T, string) Errors
-}
+// Struct is the struct-oriented spelling of All; it uses the same engine.
+func Struct[T any](rules ...Rule[T]) Rule[T] { return All(rules...) }
 
-// StructValidator is a validator for a struct.
-type StructValidator[T any] struct {
-	fields []fieldValidator[T]
-}
-
-// Struct creates a new StructValidator with the given fields.
-func Struct[T any](fields ...fieldValidator[T]) *StructValidator[T] {
-	return &StructValidator[T]{fields: fields}
-}
-
-// Validate validates the given value.
-func (v *StructValidator[T]) Validate(value T) Errors {
-	return v.ValidateWithPrefix(value, "")
-}
-
-// ValidateWithPrefix validates the given value with a prefix.
-func (v *StructValidator[T]) ValidateWithPrefix(value T, prefix string) Errors {
-	var out Errors
-	for _, field := range v.fields {
-		out = append(out, field.ValidateWithPrefix(value, prefix)...)
+// Field projects a child rule onto one named parent field.
+func (r Rule[F]) Field[P any](name string, get func(P) F) Rule[P] {
+	if r == nil || name == "" || get == nil {
+		configurationError("Field")
 	}
-	return out
-}
-
-// FieldAccessor is a field of a struct.
-type FieldAccessor[T, F any] struct {
-	name  string
-	get   func(T) F
-	rules []Rule[F]
-	inner fieldValidator[F]
-}
-
-// Field creates a new FieldAccessor with the given name, getter and rules.
-func Field[T, F any](name string, getter func(T) F, rules ...Rule[F]) FieldAccessor[T, F] {
-	return FieldAccessor[T, F]{name: name, get: getter, rules: rules}
-}
-
-// StructField creates a new FieldAccessor with the given name, getter and validator.
-func StructField[T, F any](name string, getter func(T) F, validator *StructValidator[F]) FieldAccessor[T, F] {
-	return FieldAccessor[T, F]{
-		name:  name,
-		get:   getter,
-		inner: validator,
+	segment := Segment{Kind: FieldSegment, Name: name}
+	return func(parent P) error {
+		value := get(parent)
+		return at(segment, r(value))
 	}
 }
 
-// SliceField creates a new FieldAccessor with the given name, getter and rules.
-func SliceField[T, E any](name string, getter func(T) []E, rules ...SliceRule[E]) FieldAccessor[T, []E] {
-	return FieldAccessor[T, []E]{
-		name:  name,
-		get:   getter,
-		inner: Slices(rules...),
+// Project adapts a child rule to a parent without adding a path segment.
+func (r Rule[V]) Project[P any](get func(P) V) Rule[P] {
+	if r == nil || get == nil {
+		configurationError("Project")
 	}
+	return func(parent P) error { return r(get(parent)) }
 }
 
-// MapField creates a new FieldAccessor with the given name, getter and rules.
-func MapField[T any, K comparable, V any](name string, getter func(T) map[K]V, rules ...MapRule[K, V]) FieldAccessor[T, map[K]V] {
-	return FieldAccessor[T, map[K]V]{
-		name:  name,
-		get:   getter,
-		inner: Maps(rules...),
-	}
+// Field accepts several child rules and delegates projection to their composite.
+func Field[P, F any](name string, get func(P) F, rules ...Rule[F]) Rule[P] {
+	return allConfigured("Field", rules).Field(name, get)
 }
 
-// ValidateWithPrefix validates the given value with a prefix.
-func (fa FieldAccessor[T, F]) ValidateWithPrefix(parent T, prefix string) Errors {
-	var out Errors
-	value := fa.get(parent)
+// Project accepts several child rules and delegates projection to their composite.
+func Project[P, V any](get func(P) V, rules ...Rule[V]) Rule[P] {
+	return allConfigured("Project", rules).Project(get)
+}
 
-	fieldPath := fa.name
-	if prefix != "" {
-		fieldPath = prefix + "." + fa.name
-	}
-
-	if fa.inner != nil {
-		for _, err := range fa.inner.ValidateWithPrefix(value, "") {
-			err.Field = joinField(fieldPath, err.Field)
-			out = append(out, err)
+// OptionalPtr skips children when the pointer is absent.
+func OptionalPtr[T any](rules ...Rule[T]) Rule[*T] {
+	children := allConfigured("OptionalPtr", rules)
+	return func(value *T) error {
+		if value == nil {
+			return nil
 		}
-		return out
+		return children(*value)
 	}
-
-	for _, rule := range fa.rules {
-		if err := rule(value); err != nil {
-			err.Field = fieldPath
-			out = append(out, err)
-			if err.Fatal {
-				break
-			}
-		}
-	}
-	return out
 }
 
-// joinField joins two field paths.
-func joinField(base, child string) string {
-	if base == "" {
-		return child
+// RequiredPtr reports absence and otherwise evaluates its children.
+func RequiredPtr[T any](rules ...Rule[T]) Rule[*T] {
+	children := allConfigured("RequiredPtr", rules)
+	return func(value *T) error {
+		if value == nil {
+			return NewViolation(CodeRequired, nil)
+		}
+		return children(*value)
 	}
-	if child == "" {
-		return base
+}
+
+// OptionalValue evaluates the child only when the parent getter reports presence.
+func (r Rule[V]) OptionalValue[P any](get func(P) (V, bool)) Rule[P] {
+	if r == nil || get == nil {
+		configurationError("OptionalValue")
 	}
-	return base + "." + child
+	return func(parent P) error {
+		value, present := get(parent)
+		if !present {
+			return nil
+		}
+		return r(value)
+	}
+}
+
+// RequiredValue reports absence or evaluates the present child value.
+func (r Rule[V]) RequiredValue[P any](get func(P) (V, bool)) Rule[P] {
+	if r == nil || get == nil {
+		configurationError("RequiredValue")
+	}
+	return func(parent P) error {
+		value, present := get(parent)
+		if !present {
+			return NewViolation(CodeRequired, nil)
+		}
+		return r(value)
+	}
+}
+
+// OptionalValue accepts several children and delegates presence to their composite.
+func OptionalValue[P, V any](get func(P) (V, bool), rules ...Rule[V]) Rule[P] {
+	return allConfigured("OptionalValue", rules).OptionalValue(get)
+}
+
+// RequiredValue accepts several children and delegates presence to their composite.
+func RequiredValue[P, V any](get func(P) (V, bool), rules ...Rule[V]) Rule[P] {
+	return allConfigured("RequiredValue", rules).RequiredValue(get)
 }

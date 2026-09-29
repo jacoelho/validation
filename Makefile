@@ -1,14 +1,17 @@
 # disable default rules
 .SUFFIXES:
 MAKEFLAGS+=-r -R
-GOBIN = $(shell go env GOPATH)/bin
-DATE  = $(shell date +%Y%m%d%H%M%S)
-
 default: test
 
 .PHONY: test
 test:
-	go test -race -shuffle=on -v ./...
+	python3 tools/check_spec.py
+	go test ./...
+	go test -race -shuffle=on ./...
+
+.PHONY: acceptance
+acceptance:
+	python3 tools/check_acceptance.py
 
 .PHONY: fmt
 fmt:
@@ -17,11 +20,8 @@ fmt:
 .PHONY: ci-tidy
 ci-tidy:
 	go mod tidy
-	git status --porcelain go.mod go.sum || { echo "Please run 'go mod tidy'."; exit 1; }
-
-$(GOBIN)/staticcheck:
-	go install honnef.co/go/tools/cmd/staticcheck@latest
+	@test -z "$$(git status --porcelain -- go.mod go.sum)" || { echo "Please run 'go mod tidy'."; exit 1; }
 
 .PHONY: staticcheck
-staticcheck: $(GOBIN)/staticcheck
-	$(GOBIN)/staticcheck ./...
+staticcheck:
+	go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...

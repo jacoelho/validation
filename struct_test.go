@@ -1,443 +1,60 @@
 package validation_test
 
 import (
+	"errors"
 	"testing"
 
-	"github.com/jacoelho/validation"
+	v "github.com/jacoelho/validation/v2"
 )
 
-type User struct {
-	Name     string
-	Age      int
-	Email    string
-	Address  Address
-	Tags     []string
-	Settings map[string]string
-}
-
-type Address struct {
-	Street  string
-	City    string
-	Country string
-}
-
-func TestStructValidation(t *testing.T) {
-	validator := validation.Struct(
-		validation.Field("Name", func(u User) string { return u.Name },
-			validation.NotZero[string](),
-			validation.StringsRuneMaxLength[string](50),
-		),
-		validation.Field("Age", func(u User) int { return u.Age },
-			validation.NumbersMin(18),
-			validation.NumbersMax(120),
-		),
-		validation.Field("Email", func(u User) string { return u.Email },
-			validation.NotZero[string](),
-			validation.StringsRuneMaxLength[string](100),
-		),
-		validation.StructField("Address", func(u User) Address { return u.Address },
-			validation.Struct(
-				validation.Field("Street", func(a Address) string { return a.Street },
-					validation.NotZero[string](),
-				),
-				validation.Field("City", func(a Address) string { return a.City },
-					validation.NotZero[string](),
-				),
-				validation.Field("Country", func(a Address) string { return a.Country },
-					validation.NotZero[string](),
-				),
-			),
-		),
-		validation.SliceField("Tags", func(u User) []string { return u.Tags },
-			validation.SlicesMaxLength[string](5),
-			validation.SlicesForEach(
-				validation.NotZero[string](),
-				validation.StringsRuneMaxLength[string](20),
-			),
-		),
-		validation.MapField("Settings", func(u User) map[string]string { return u.Settings },
-			validation.MapsMaxKeys[string, string](10),
-			validation.MapsForEach(
-				func(k, v string) *validation.Error {
-					if v == "" {
-						return &validation.Error{
-							Code:   "empty_value",
-							Params: map[string]any{"key": k},
-							Field:  k,
-						}
-					}
-					return nil
-				},
-			),
-		),
-	)
-
-	tests := []struct {
-		name     string
-		user     User
-		wantErr  bool
-		errCode  string
-		errField string
-	}{
-		{
-			name: "valid user",
-			user: User{
-				Name:  "John Doe",
-				Age:   30,
-				Email: "john@example.com",
-				Address: Address{
-					Street:  "123 Main St",
-					City:    "New York",
-					Country: "USA",
-				},
-				Tags: []string{"user", "premium"},
-				Settings: map[string]string{
-					"theme": "dark",
-					"lang":  "en",
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "empty name",
-			user: User{
-				Name:    "",
-				Age:     25,
-				Address: Address{Street: "123 Main St", City: "Anytown"},
-				Tags:    []string{"user"},
-				Settings: map[string]string{
-					"theme": "dark",
-				},
-			},
-			wantErr:  true,
-			errField: "Name",
-			errCode:  "zero",
-		},
-		{
-			name: "invalid age",
-			user: User{
-				Name:  "John Doe",
-				Age:   15,
-				Email: "john@example.com",
-				Address: Address{
-					Street:  "123 Main St",
-					City:    "New York",
-					Country: "USA",
-				},
-			},
-			wantErr:  true,
-			errCode:  "min",
-			errField: "Age",
-		},
-		{
-			name: "empty address fields",
-			user: User{
-				Name:    "John",
-				Age:     25,
-				Email:   "john@example.com",
-				Address: Address{Street: "", City: ""},
-				Tags:    []string{"user"},
-				Settings: map[string]string{
-					"theme": "dark",
-				},
-			},
-			wantErr:  true,
-			errField: "Address.Street",
-			errCode:  "zero",
-		},
-		{
-			name: "too many tags",
-			user: User{
-				Name:  "John Doe",
-				Age:   30,
-				Email: "john@example.com",
-				Address: Address{
-					Street:  "123 Main St",
-					City:    "New York",
-					Country: "USA",
-				},
-				Tags: []string{"1", "2", "3", "4", "5", "6"},
-			},
-			wantErr:  true,
-			errCode:  "max",
-			errField: "Tags",
-		},
-		{
-			name: "empty setting value",
-			user: User{
-				Name:  "John Doe",
-				Age:   30,
-				Email: "john@example.com",
-				Address: Address{
-					Street:  "123 Main St",
-					City:    "New York",
-					Country: "USA",
-				},
-				Settings: map[string]string{
-					"theme": "",
-				},
-			},
-			wantErr:  true,
-			errCode:  "empty_value",
-			errField: "Settings.theme",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validator.Validate(tt.user)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-					return
-				}
-				if len(err) == 0 {
-					t.Error("expected error slice to be non-empty")
-					return
-				}
-				if err[0].Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err[0].Code)
-				}
-				if err[0].Field != tt.errField {
-					t.Errorf("expected error field %q, got %q", tt.errField, err[0].Field)
-				}
-			} else {
-				if len(err) > 0 {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestStructValidationWithPrefix(t *testing.T) {
-	validator := validation.Struct(
-		validation.Field("Name", func(u User) string { return u.Name },
-			validation.NotZero[string](),
-		),
-	)
-
-	tests := []struct {
-		name     string
-		user     User
-		prefix   string
-		wantErr  bool
-		errField string
-	}{
-		{
-			name: "with prefix",
-			user: User{
-				Name: "",
-			},
-			prefix:   "user",
-			wantErr:  true,
-			errField: "user.Name",
-		},
-		{
-			name: "without prefix",
-			user: User{
-				Name: "",
-			},
-			prefix:   "",
-			wantErr:  true,
-			errField: "Name",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validator.ValidateWithPrefix(tt.user, tt.prefix)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-					return
-				}
-				if len(err) == 0 {
-					t.Error("expected error slice to be non-empty")
-					return
-				}
-				if err[0].Field != tt.errField {
-					t.Errorf("expected error field %q, got %q", tt.errField, err[0].Field)
-				}
-			} else {
-				if len(err) > 0 {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestNestedStructValidation(t *testing.T) {
-	type Company struct {
+func TestNestedStructAllErrors(t *testing.T) {
+	type Address struct{ City string }
+	type User struct {
 		Name    string
 		Address Address
+		Age     *int
 	}
-
-	type Employee struct {
-		Name    string
-		Company Company
-	}
-
-	validator := validation.Struct(
-		validation.Field("Name", func(e Employee) string { return e.Name },
-			validation.NotZero[string](),
-		),
-		validation.StructField("Company", func(e Employee) Company { return e.Company },
-			validation.Struct(
-				validation.Field("Name", func(c Company) string { return c.Name },
-					validation.NotZero[string](),
-				),
-				validation.StructField("Address", func(c Company) Address { return c.Address },
-					validation.Struct(
-						validation.Field("Street", func(a Address) string { return a.Street },
-							validation.NotZero[string](),
-						),
-					),
-				),
-			),
-		),
+	address := v.Struct(v.Field("city", func(a Address) string { return a.City }, v.NotEmpty[string](), v.RuneMinLength[string](2)))
+	user := v.Struct(
+		v.Field("name", func(u User) string { return u.Name }, v.NotEmpty[string](), v.RuneMinLength[string](2)),
+		v.Field("address", func(u User) Address { return u.Address }, address),
+		v.Field("age", func(u User) *int { return u.Age }, v.RequiredPtr(v.Min(18))),
 	)
-
-	tests := []struct {
-		name     string
-		employee Employee
-		wantErr  bool
-		errField string
-	}{
-		{
-			name: "valid employee",
-			employee: Employee{
-				Name: "John Doe",
-				Company: Company{
-					Name: "Acme Inc",
-					Address: Address{
-						Street: "123 Main St",
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "empty employee name",
-			employee: Employee{
-				Name: "",
-				Company: Company{
-					Name: "Acme Inc",
-					Address: Address{
-						Street: "123 Main St",
-					},
-				},
-			},
-			wantErr:  true,
-			errField: "Name",
-		},
-		{
-			name: "empty company name",
-			employee: Employee{
-				Name: "John Doe",
-				Company: Company{
-					Name: "",
-					Address: Address{
-						Street: "123 Main St",
-					},
-				},
-			},
-			wantErr:  true,
-			errField: "Company.Name",
-		},
-		{
-			name: "empty address street",
-			employee: Employee{
-				Name: "John Doe",
-				Company: Company{
-					Name: "Acme Inc",
-					Address: Address{
-						Street: "",
-					},
-				},
-			},
-			wantErr:  true,
-			errField: "Company.Address.Street",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validator.Validate(tt.employee)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-					return
-				}
-				if len(err) == 0 {
-					t.Error("expected error slice to be non-empty")
-					return
-				}
-				if err[0].Field != tt.errField {
-					t.Errorf("expected error field %q, got %q", tt.errField, err[0].Field)
-				}
-			} else {
-				if len(err) > 0 {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
+	assertIssues(t, user(User{}), []v.Code{v.CodeNotEmpty, v.CodeRuneMinLength, v.CodeNotEmpty, v.CodeRuneMinLength, v.CodeRequired}, []string{"$.name", "$.name", "$.address.city", "$.address.city", "$.age"})
+	age := 20
+	if err := user(User{Name: "Ann", Address: Address{City: "Paris"}, Age: &age}); err != nil {
+		t.Fatalf("valid user = %v", err)
 	}
 }
 
-func TestStructValidationWithFatalErrors(t *testing.T) {
-	validator := validation.Struct(
-		validation.Field("Name", func(u User) string { return u.Name },
-			validation.NotZero[string](),
-		),
-		validation.Field("Age", func(u User) int { return u.Age },
-			validation.NumbersMin[int](18),
-		),
-	)
-
-	tests := []struct {
-		name    string
-		user    User
-		wantErr bool
-		errLen  int
-	}{
-		{
-			name: "multiple errors",
-			user: User{
-				Name: "",
-				Age:  15,
-			},
-			wantErr: true,
-			errLen:  2,
-		},
-		{
-			name: "valid user",
-			user: User{
-				Name: "John Doe",
-				Age:  30,
-			},
-			wantErr: false,
-			errLen:  0,
-		},
+func TestParentConditionGuardsField(t *testing.T) {
+	type User struct {
+		Premium bool
+		Card    string
 	}
+	rule := v.When(func(u User) bool { return u.Premium }, v.Field("card", func(u User) string { return u.Card }, v.NotEmpty[string]()))
+	if got := rule(User{}); got != nil {
+		t.Fatalf("basic user = %v", got)
+	}
+	assertIssues(t, rule(User{Premium: true}), []v.Code{v.CodeNotEmpty}, []string{"$.card"})
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validator.Validate(tt.user)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-					return
-				}
-				if len(err) != tt.errLen {
-					t.Errorf("expected %d errors, got %d", tt.errLen, len(err))
-				}
-			} else {
-				if len(err) > 0 {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
+func TestSavedErrorUnaffectedByLaterCalls(t *testing.T) {
+	type Item struct{ Name string }
+	rule := v.Field("item", func(i Item) string { return i.Name }, v.NotEmpty[string]())
+	first := rule(Item{})
+	if first == nil {
+		t.Fatal("first failed call returned nil")
+	}
+	if got := rule(Item{Name: "ok"}); got != nil {
+		t.Fatalf("later valid call = %v", got)
+	}
+	_ = rule(Item{})
+	if got := v.Format(first); got != "$.item: not_empty" {
+		t.Fatalf("saved error changed: %q", got)
+	}
+	var coded v.Coded
+	if !errors.As(first, &coded) || coded.Code() != v.CodeNotEmpty {
+		t.Fatal("coded error not discoverable")
 	}
 }

@@ -1,123 +1,133 @@
 package validation
 
-// Rule is a function that validates a value.
-type Rule[T any] func(value T) *Error
+// Rule is the synchronous, typed validation contract.
+type Rule[T any] func(T) error
 
-// RuleNot negates the rule.
-func RuleNot[T any](rule Rule[T]) Rule[T] {
-	return func(value T) *Error {
-		if err := rule(value); err != nil {
+func (r Rule[T]) Validate(value T) error { return r(value) }
+
+func checkRules[T any](constructor string, rules []Rule[T]) []Rule[T] {
+	for _, rule := range rules {
+		if rule == nil {
+			configurationError(constructor)
+		}
+	}
+	return append([]Rule[T](nil), rules...)
+}
+
+// All evaluates every configured rule in declaration order.
+func All[T any](rules ...Rule[T]) Rule[T] { return allConfigured("All", rules) }
+
+func allConfigured[T any](constructor string, rules []Rule[T]) Rule[T] {
+	configured := checkRules(constructor, rules)
+	return func(value T) error {
+		var failures []error
+		for _, rule := range configured {
+			failures = appendFailure(failures, rule(value))
+		}
+		return combine(failures)
+	}
+}
+
+// When evaluates its child group when the predicate holds.
+func When[T any](predicate func(T) bool, rules ...Rule[T]) Rule[T] {
+	if predicate == nil {
+		configurationError("When")
+	}
+	children := allConfigured("When", rules)
+	return func(value T) error {
+		if !predicate(value) {
 			return nil
 		}
-		return &Error{
-			Code: "not",
-		}
+		return children(value)
 	}
 }
 
-// RuleStopOnError stops the validation process if an error occurs.
-func RuleStopOnError[T any](rule Rule[T]) Rule[T] {
-	return func(value T) *Error {
-		if err := rule(value); err != nil {
-			err.Fatal = true
-			return err
+// Unless evaluates its child group when the predicate does not hold.
+func Unless[T any](predicate func(T) bool, rules ...Rule[T]) Rule[T] {
+	if predicate == nil {
+		configurationError("Unless")
+	}
+	children := allConfigured("Unless", rules)
+	return func(value T) error {
+		if predicate(value) {
+			return nil
 		}
-		return nil
+		return children(value)
 	}
 }
 
-// Or combines multiple rules, at least one must pass.
-// If all rules fail, the last error is returned.
-func Or[T any](rules ...Rule[T]) Rule[T] {
-	return func(value T) *Error {
-		var lastErr *Error
-		for _, rule := range rules {
-			if err := rule(value); err == nil {
-				return nil
-			} else {
-				lastErr = err
-			}
+// Check creates one constraint from a predicate and a lazy failure factory.
+func Check[T any](predicate func(T) bool, failure func(T) error) Rule[T] {
+	if predicate == nil || failure == nil {
+		configurationError("Check")
+	}
+	return func(value T) error {
+		if predicate(value) {
+			return nil
 		}
-		return lastErr
+		err := failure(value)
+		if err == nil {
+			configurationError("Check")
+		}
+		return err
 	}
 }
 
-// When applies a rule only if the condition is true.
-func When[T any](condition func(T) bool, rule Rule[T]) Rule[T] {
-	return func(value T) *Error {
-		if condition(value) {
-			return rule(value)
+func Equal[T comparable](want T) Rule[T] {
+	return func(value T) error {
+		if value == want {
+			return nil
 		}
-		return nil
+		return NewViolation(CodeEqual, nil)
 	}
 }
-
-// Unless applies a rule only if the condition is false
-func Unless[T any](condition func(T) bool, rule Rule[T]) Rule[T] {
-	return func(value T) *Error {
-		if !condition(value) {
-			return rule(value)
+func NotEqual[T comparable](other T) Rule[T] {
+	return func(value T) error {
+		if value != other {
+			return nil
 		}
-		return nil
+		return NewViolation(CodeNotEqual, nil)
 	}
 }
-
-// NotZero ensures the value is not the zero value for its type
-func NotZero[T comparable]() Rule[T] {
-	return func(value T) *Error {
-		var zero T
+func Zero[T comparable]() Rule[T] {
+	var zero T
+	return func(value T) error {
 		if value == zero {
-			return &Error{
-				Code: "zero",
-			}
+			return nil
 		}
-		return nil
+		return NewViolation(CodeZero, nil)
 	}
 }
-
-// NotZeroable ensures the value is not the zero value.
-// The zero value is determined by the IsZero method.
-func NotZeroable[T interface{ IsZero() bool }]() Rule[T] {
-	return func(value T) *Error {
-		if value.IsZero() {
-			return &Error{
-				Code: "zero",
-			}
+func NotZero[T comparable]() Rule[T] {
+	var zero T
+	return func(value T) error {
+		if value != zero {
+			return nil
 		}
-		return nil
+		return NewViolation(CodeNotZero, nil)
 	}
 }
-
-// OneOf validates that the value is one of the given allowed values.
 func OneOf[T comparable](allowed ...T) Rule[T] {
 	set := make(map[T]struct{}, len(allowed))
-	for _, v := range allowed {
-		set[v] = struct{}{}
+	for _, value := range allowed {
+		set[value] = struct{}{}
 	}
-	return func(value T) *Error {
-		if _, ok := set[value]; !ok {
-			return &Error{
-				Code:   "one_of",
-				Params: map[string]any{"value": value},
-			}
+	return func(value T) error {
+		if _, ok := set[value]; ok {
+			return nil
 		}
-		return nil
+		return NewViolation(CodeOneOf, nil)
 	}
 }
-
-// NotOneOf validates that the value is not one of the given disallowed values.
-func NotOneOf[T comparable](disallowed ...T) Rule[T] {
-	set := make(map[T]struct{}, len(disallowed))
-	for _, v := range disallowed {
-		set[v] = struct{}{}
+func NotOneOf[T comparable](forbidden ...T) Rule[T] {
+	set := make(map[T]struct{}, len(forbidden))
+	for _, value := range forbidden {
+		set[value] = struct{}{}
 	}
-	return func(value T) *Error {
-		if _, ok := set[value]; ok {
-			return &Error{
-				Code:   "not_one_of",
-				Params: map[string]any{"value": value},
-			}
+	return func(value T) error {
+		if _, ok := set[value]; !ok {
+			return nil
 		}
-		return nil
+		return NewViolation(CodeNotOneOf, nil)
 	}
 }
