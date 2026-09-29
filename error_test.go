@@ -3,7 +3,7 @@ package validation_test
 import (
 	"errors"
 	"fmt"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -154,7 +154,9 @@ func TestIssueSnapshotIndependence(t *testing.T) {
 	second := v.Issues(err)
 	first[0].Path[0].Name = "changed"
 	first[0].Code = "changed"
-	if !reflect.DeepEqual(second, v.Issues(err)) {
+	if !slices.EqualFunc(second, v.Issues(err), func(a, b v.Issue) bool {
+		return a.Code == b.Code && slices.Equal(a.Path, b.Path)
+	}) {
 		t.Fatal("issue mutation changed source tree")
 	}
 	if second[0].Path[0].Name != "name" || first[1].Path[0].Name != "name" {

@@ -105,12 +105,12 @@ func TestWhitespaceRules(t *testing.T) {
 
 func TestMatch(t *testing.T) {
 	type label string
-	containsDigits := validation.Match[label](regexp.MustCompile(`[0-9]+`))
+	containsDigits := validation.Match[label](regexp.MustCompile(`\d+`))
 	if err := containsDigits("item42end"); err != nil {
 		t.Fatalf("substring should match: %v", err)
 	}
 	requirePrimitiveCodes(t, containsDigits("item"), validation.CodeMatch)
-	wholeDigits := validation.Match[label](regexp.MustCompile(`^[0-9]+$`))
+	wholeDigits := validation.Match[label](regexp.MustCompile(`^\d+$`))
 	requirePrimitiveCodes(t, wholeDigits("item42"), validation.CodeMatch)
 	if err := wholeDigits("42"); err != nil {
 		t.Fatalf("anchored expression should match entire input: %v", err)

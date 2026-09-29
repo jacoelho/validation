@@ -1,5 +1,7 @@
 package validation
 
+import "slices"
+
 // SliceLength requires a slice to contain exactly n elements.
 func SliceLength[S ~[]E, E any](n int) Rule[S] {
 	if n < 0 {
@@ -97,10 +99,8 @@ func AtIndex[S ~[]E, E any](index int, rules ...Rule[E]) Rule[S] {
 // SliceContains requires at least one element equal to want.
 func SliceContains[S ~[]E, E comparable](want E) Rule[S] {
 	return func(values S) error {
-		for _, value := range values {
-			if value == want {
-				return nil
-			}
+		if slices.Contains(values, want) {
+			return nil
 		}
 		return NewViolation(CodeContains, nil)
 	}
@@ -157,7 +157,7 @@ func SliceUnique[S ~[]E, E comparable]() Rule[S] {
 		var failures []error
 		for i := range values {
 			first := -1
-			for j := 0; j < i; j++ {
+			for j := range i {
 				if values[j] == values[i] {
 					first = j
 					break

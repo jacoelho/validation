@@ -324,7 +324,7 @@ func identifier(name string) bool {
 	if name == "" {
 		return false
 	}
-	for i := 0; i < len(name); i++ {
+	for i := range len(name) {
 		c := name[i]
 		if c == '_' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' {
 			continue

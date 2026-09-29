@@ -1,3 +1,4 @@
+// Package validation composes typed rules and reports structured failures.
 package validation
 
 // Rule is the synchronous, typed validation contract.

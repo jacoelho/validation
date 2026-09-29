@@ -274,7 +274,7 @@ func TestNoFailureCapAcrossLargeSlice(t *testing.T) {
 	if len(issues) != 514 || firstCalls != 257 || secondCalls != 257 {
 		t.Fatalf("issues=%d calls=%d/%d, want 514 and 257/257", len(issues), firstCalls, secondCalls)
 	}
-	for i := 0; i < 257; i++ {
+	for i := range 257 {
 		for child, code := range []v.Code{"first", "second"} {
 			issue := issues[2*i+child]
 			if issue.Code != code || len(issue.Path) != 1 || issue.Path[0].Kind != v.IndexSegment || issue.Path[0].Index != i {

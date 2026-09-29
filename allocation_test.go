@@ -32,7 +32,7 @@ func TestAllocValidCore(t *testing.T) {
 
 func TestAllocSuccessfulLastAlternative(t *testing.T) {
 	factoryCalls := 0
-	rule := v.Check(func(value int) bool { return value < 0 || value == 0 || value == 7 }, func(int) error { factoryCalls++; return v.NewViolation("unexpected", nil) })
+	rule := v.Check(func(value int) bool { return value <= 0 || value == 7 }, func(int) error { factoryCalls++; return v.NewViolation("unexpected", nil) })
 	allocs := testing.AllocsPerRun(1000, func() {
 		if err := rule(7); err != nil {
 			panic(err)
