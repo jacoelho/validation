@@ -66,6 +66,15 @@ type Coded interface {
 	Code() Code
 }
 
+// Parameterized exposes named message parameters for built-in or custom errors.
+// Parameters returns nil when there are no parameters, otherwise a fresh map.
+// Values retain their original types;
+// referenced data must be immutable or defensively copied by the error owner.
+type Parameterized interface {
+	Coded
+	Parameters() map[string]any
+}
+
 // ConfigurationError reports invalid static rule configuration.
 type ConfigurationError struct{ constructor string }
 
@@ -88,6 +97,32 @@ func NewViolation(code Code, cause error) *Violation {
 func (e *Violation) Code() Code    { return e.code }
 func (e *Violation) Error() string { return Format(e) }
 func (e *Violation) Unwrap() error { return e.cause }
+
+// TextError describes a required substring, prefix, suffix, regexp, or time layout.
+// Code identifies how Constraint is interpreted. Byte constraints retain their
+// exact bytes in the string, including invalid UTF-8.
+type TextError struct {
+	code       Code
+	constraint string
+}
+
+func (e *TextError) Code() Code         { return e.code }
+func (e *TextError) Error() string      { return Format(e) }
+func (e *TextError) Constraint() string { return e.constraint }
+
+// MultipleOfError describes a failed divisibility constraint, retaining the
+// configured numeric type and precision. Tolerance is present for float rules,
+// including when the configured tolerance is zero.
+type MultipleOfError[T Number] struct {
+	base         T
+	tolerance    T
+	hasTolerance bool
+}
+
+func (e *MultipleOfError[T]) Code() Code           { return CodeMultipleOf }
+func (e *MultipleOfError[T]) Error() string        { return Format(e) }
+func (e *MultipleOfError[T]) Base() T              { return e.base }
+func (e *MultipleOfError[T]) Tolerance() (T, bool) { return e.tolerance, e.hasTolerance }
 
 type LengthUnit string
 
@@ -337,7 +372,7 @@ func identifier(name string) bool {
 	return true
 }
 
-// Format presents paths and codes without invoking external Error methods.
+// Format presents paths and default English failure reasons.
 func Format(err error) string {
 	var b strings.Builder
 	for issue := range WalkIssues(err) {
@@ -346,7 +381,7 @@ func Format(err error) string {
 		}
 		b.WriteString(FormatPath(issue.Path))
 		b.WriteString(": ")
-		b.WriteString(string(issue.Code))
+		b.WriteString(DefaultMessage(issue))
 	}
 	return b.String()
 }

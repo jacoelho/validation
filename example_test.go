@@ -20,5 +20,17 @@ func Example_nested() {
 		v.Each[[]Address](addressRule).Field("addresses", func(u User) []Address { return u.Addresses }),
 	)
 	fmt.Println(v.Format(userRule.Validate(User{Addresses: []Address{{}}})))
-	// Output: $.name: not_empty; $.name: rune_min_length; $.addresses[0].city: not_empty
+	// Output: $.name: must not be empty; $.name: length must be at least 2 runes (got 0); $.addresses[0].city: must not be empty
+}
+
+func ExampleParameterized() {
+	failure := v.Min(2).Field("bar", func(n int) int { return n })(1)
+	for issue := range v.WalkIssues(failure) {
+		message := v.DefaultMessage(issue)
+		if detail, ok := issue.Err.(v.Parameterized); ok && issue.Code == v.CodeMin {
+			message = fmt.Sprintf("deve ser pelo menos %v", detail.Parameters()["minimum"])
+		}
+		fmt.Printf("%s: %s\n", v.FormatPath(issue.Path), message)
+	}
+	// Output: $.bar: deve ser pelo menos 2
 }

@@ -50,7 +50,7 @@ func TestSavedErrorUnaffectedByLaterCalls(t *testing.T) {
 		t.Fatalf("later valid call = %v", got)
 	}
 	_ = rule(Item{})
-	if got := v.Format(first); got != "$.item: not_empty" {
+	if got := v.Format(first); got != "$.item: must not be empty" {
 		t.Fatalf("saved error changed: %q", got)
 	}
 	var coded v.Coded

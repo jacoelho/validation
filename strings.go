@@ -159,7 +159,7 @@ func Contains[T ~string](part T) Rule[T] {
 	want := string(part)
 	return func(value T) error {
 		if !strings.Contains(string(value), want) {
-			return NewViolation(CodeContains, nil)
+			return &TextError{code: CodeContains, constraint: want}
 		}
 		return nil
 	}
@@ -170,7 +170,7 @@ func HasPrefix[T ~string](prefix T) Rule[T] {
 	want := string(prefix)
 	return func(value T) error {
 		if !strings.HasPrefix(string(value), want) {
-			return NewViolation(CodePrefix, nil)
+			return &TextError{code: CodePrefix, constraint: want}
 		}
 		return nil
 	}
@@ -181,7 +181,7 @@ func HasSuffix[T ~string](suffix T) Rule[T] {
 	want := string(suffix)
 	return func(value T) error {
 		if !strings.HasSuffix(string(value), want) {
-			return NewViolation(CodeSuffix, nil)
+			return &TextError{code: CodeSuffix, constraint: want}
 		}
 		return nil
 	}
@@ -195,7 +195,7 @@ func Match[T ~string](pattern *regexp.Regexp) Rule[T] {
 	}
 	return func(value T) error {
 		if !pattern.MatchString(string(value)) {
-			return NewViolation(CodeMatch, nil)
+			return &TextError{code: CodeMatch, constraint: pattern.String()}
 		}
 		return nil
 	}
@@ -274,7 +274,7 @@ func BytesContains[B ~[]byte](part B) Rule[B] {
 	want := copyBytes(part)
 	return func(value B) error {
 		if !bytes.Contains([]byte(value), []byte(want)) {
-			return NewViolation(CodeContains, nil)
+			return &TextError{code: CodeContains, constraint: string(want)}
 		}
 		return nil
 	}
@@ -285,7 +285,7 @@ func BytesHasPrefix[B ~[]byte](prefix B) Rule[B] {
 	want := copyBytes(prefix)
 	return func(value B) error {
 		if !bytes.HasPrefix([]byte(value), []byte(want)) {
-			return NewViolation(CodePrefix, nil)
+			return &TextError{code: CodePrefix, constraint: string(want)}
 		}
 		return nil
 	}
@@ -296,7 +296,7 @@ func BytesHasSuffix[B ~[]byte](suffix B) Rule[B] {
 	want := copyBytes(suffix)
 	return func(value B) error {
 		if !bytes.HasSuffix([]byte(value), []byte(want)) {
-			return NewViolation(CodeSuffix, nil)
+			return &TextError{code: CodeSuffix, constraint: string(want)}
 		}
 		return nil
 	}
