@@ -103,13 +103,36 @@ func TestAT_ALLOCATION_006_UniquenessTradeoff(t *testing.T) {
 		t.Fatalf("uniqueness benchmark failed: %v\n%s", err, out)
 	}
 	for _, size := range []string{"8", "64", "1024"} {
-		pattern := regexp.MustCompile(`(?m)^BenchmarkSliceUnique/` + size + `-\d+\s+\d+\s+\S+ ns/op\s+` + size + `(?:\.0+)? input-items\s+0 B/op\s+0 allocs/op$`)
+		pattern := regexp.MustCompile(`(?m)^BenchmarkSliceUnique/` + size + `-\d+\s+\d+\s+\S+ ns/op\s+` + size + `(?:\.0+)? input-items\s+\d+ B/op\s+\d+ allocs/op$`)
 		if !pattern.Match(out) {
-			t.Errorf("missing zero-allocation uniqueness row for size %s:\n%s", size, out)
+			t.Errorf("missing uniqueness benchmark row for size %s:\n%s", size, out)
 		}
 	}
 	if !strings.Contains(string(out), "compiler="+runtime.Version()) || !strings.Contains(string(out), "platform="+runtime.GOOS+"/"+runtime.GOARCH) {
 		t.Fatalf("uniqueness benchmark lacks compiler/platform metadata:\n%s", out)
+	}
+	report := nativeAllocationEvidence(t)
+	for _, size := range []string{"8", "64", "1024"} {
+		name := "slice-size-" + size
+		found := false
+		for _, fixture := range report.Fixtures {
+			if fixture.Name != name {
+				continue
+			}
+			found = true
+			if fixture.Kind != "allocation-free" {
+				t.Errorf("%s has kind %q", name, fixture.Kind)
+			}
+			for _, phase := range []string{"first", "batch"} {
+				probe, ok := fixture.Phases[phase]
+				if !ok || probe.Status != "passed" || probe.Mallocs != 0 || probe.Bytes != 0 {
+					t.Errorf("%s/%s allocation = %+v", name, phase, probe)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("missing uniqueness allocation fixture %s", name)
+		}
 	}
 }
 
@@ -147,27 +170,7 @@ type allocationEvidence struct {
 }
 
 func TestAT_ALLOCATION_NativeProbes(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "allocation.json")
-	cmd := exec.Command("python3", "tools/check_allocation.py", "--json-output", path)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("native allocation gate failed: %v\n%s", err, out)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("allocation gate did not write evidence: %v", err)
-	}
-	var report allocationEvidence
-	if err := json.Unmarshal(data, &report); err != nil {
-		t.Fatalf("decode allocation evidence: %v", err)
-	}
-	if report.Schema != "validation.allocation-evidence.v1" || report.Status != "passed" || len(report.Failures) != 0 {
-		t.Fatalf("allocation gate status: schema=%q status=%q failures=%v", report.Schema, report.Status, report.Failures)
-	}
-	if len(report.Metadata.Compilers) != 1 || report.Metadata.Compilers[0] != runtime.Version() ||
-		len(report.Metadata.Platforms) != 1 || report.Metadata.Platforms[0] != runtime.GOOS+"/"+runtime.GOARCH {
-		t.Fatalf("allocation evidence toolchain/platform = %+v, want %s %s/%s", report.Metadata, runtime.Version(), runtime.GOOS, runtime.GOARCH)
-	}
+	report := nativeAllocationEvidence(t)
 	byName := make(map[string]int, len(report.Fixtures))
 	for index, fixture := range report.Fixtures {
 		if _, duplicate := byName[fixture.Name]; duplicate {
@@ -246,6 +249,32 @@ func TestAT_ALLOCATION_NativeProbes(t *testing.T) {
 	}
 }
 
+func nativeAllocationEvidence(t *testing.T) allocationEvidence {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "allocation.json")
+	cmd := exec.Command("python3", "tools/check_allocation.py", "--json-output", path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("native allocation gate failed: %v\n%s", err, out)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("allocation gate did not write evidence: %v", err)
+	}
+	var report allocationEvidence
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("decode allocation evidence: %v", err)
+	}
+	if report.Schema != "validation.allocation-evidence.v1" || report.Status != "passed" || len(report.Failures) != 0 {
+		t.Fatalf("allocation gate status: schema=%q status=%q failures=%v", report.Schema, report.Status, report.Failures)
+	}
+	if len(report.Metadata.Compilers) != 1 || report.Metadata.Compilers[0] != runtime.Version() ||
+		len(report.Metadata.Platforms) != 1 || report.Metadata.Platforms[0] != runtime.GOOS+"/"+runtime.GOARCH {
+		t.Fatalf("allocation evidence toolchain/platform = %+v, want %s %s/%s", report.Metadata, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	}
+	return report
+}
+
 func TestAT_ALLOCATION_004_BenchmarkRows(t *testing.T) {
 	cmd := exec.Command("go", "test", "-run", "^$", "-bench", ".", "-benchmem", "-benchtime=1x", "-count=1", ".")
 	out, err := cmd.CombinedOutput()
@@ -272,12 +301,5 @@ func TestAT_ALLOCATION_004_BenchmarkRows(t *testing.T) {
 	}
 	if !strings.Contains(text, "compiler="+runtime.Version()) || !strings.Contains(text, "platform="+runtime.GOOS+"/"+runtime.GOARCH) {
 		t.Fatalf("benchmark output lacks exact compiler/platform metadata:\n%s", out)
-	}
-	for _, line := range rows {
-		if strings.Contains(line, "/valid-") || strings.Contains(line, "BenchmarkSliceUnique/") {
-			if !regexp.MustCompile(`\s+0 B/op\s+0 allocs/op$`).MatchString(line) {
-				t.Errorf("valid evaluation allocated: %s", line)
-			}
-		}
 	}
 }

@@ -2298,7 +2298,7 @@
       "row_ordinal": null,
       "status": "bound",
       "test": "TestAT_ALLOCATION_004_BenchmarkRows",
-      "evidence": "The benchmark smoke checks separate construction, valid, invalid, traversal and formatting rows; complete metrics and exact toolchain/platform metadata; and zero allocation in valid rows. BenchmarkValidation prepares the input and rule before b.Loop and reports errors in a separate row. The native gate records ten runs per category.",
+      "evidence": "The benchmark smoke checks separate construction, valid, invalid, traversal and formatting rows with complete metrics and exact toolchain/platform metadata. BenchmarkValidation prepares the input and rule before b.Loop and reports errors in a separate row. The native gate records ten runs per category; exact successful-path allocation is checked by fresh-process probes.",
       "command": "go test -run '^TestAT_ALLOCATION_004_BenchmarkRows$' ."
     },
     {
@@ -2316,7 +2316,7 @@
       "row_ordinal": null,
       "status": "bound",
       "test": "TestAT_ALLOCATION_006_UniquenessTradeoff",
-      "evidence": "The test inspects the previous-elements equality scan and absence of per-call maps/input writes, requires benchmark rows at sizes 8, 64 and 1024 with zero B/op and allocs/op, and checks the documented n(n−1)/2 bound. Behaviour tests also assert unchanged inputs; documentation states no absolute latency SLA.",
+      "evidence": "The test inspects the previous-elements equality scan and absence of per-call maps/input writes, requires benchmark rows at sizes 8, 64 and 1024, and checks first-use and batch zero-allocation probes at those sizes. It verifies the documented n(n−1)/2 bound; behaviour tests assert unchanged inputs, and documentation states no absolute latency SLA.",
       "command": "go test -run '^TestAT_ALLOCATION_006_UniquenessTradeoff$' ."
     },
     {
