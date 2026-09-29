@@ -1,189 +1,247 @@
 package validation
 
-import (
-	"fmt"
-)
+import "slices"
 
-// MapRule is a function that validates a map of values.
-type MapRule[K comparable, V any] func(values map[K]V) Errors
-
-// MapEntryRule is a function that validates an entry in a map.
-type MapEntryRule[K comparable, V any] func(key K, value V) *Error
-
-// MapValidator is a validator for maps of values.
-type MapValidator[K comparable, V any] struct {
-	rules []MapRule[K, V]
+// Entry is the typed value supplied by MapEach for one map entry.
+type Entry[K comparable, V any] struct {
+	Key   K
+	Value V
 }
 
-// Maps creates a new MapValidator with the given rules.
-func Maps[K comparable, V any](rules ...MapRule[K, V]) *MapValidator[K, V] {
-	return &MapValidator[K, V]{rules: rules}
+// KeyOrder defines ordering and canonical path text for a supported key type.
+type KeyOrder[K comparable] struct {
+	Less func(K, K) bool
+	Text func(K) string
 }
 
-// Validate validates the given values.
-func (v *MapValidator[K, V]) Validate(values map[K]V) Errors {
-	return v.ValidateWithPrefix(values, "")
+// StringKeys returns lexicographic ordering and exact text for string-like keys.
+func StringKeys[K ~string]() KeyOrder[K] {
+	return KeyOrder[K]{
+		Less: func(left, right K) bool { return left < right },
+		Text: func(key K) string { return string(key) },
+	}
 }
 
-// ValidateWithPrefix validates the given values with a prefix.
-func (v *MapValidator[K, V]) ValidateWithPrefix(values map[K]V, prefix string) Errors {
-	var out Errors
-	for _, rule := range v.rules {
-		ruleErrs := rule(values)
-		for _, err := range ruleErrs {
-			if err.Field != "" {
-				err.Field = joinField(prefix, err.Field)
-			} else {
-				err.Field = prefix
+// MapLength requires a map to contain exactly n entries.
+func MapLength[M ~map[K]V, K comparable, V any](n int) Rule[M] {
+	if n < 0 {
+		configurationError("MapLength")
+	}
+	return func(values M) error {
+		if len(values) == n {
+			return nil
+		}
+		return newLengthError(CodeLength, len(values), n, &n, LengthEntries)
+	}
+}
+
+// MapMinLength requires a map to contain at least min entries.
+func MapMinLength[M ~map[K]V, K comparable, V any](min int) Rule[M] {
+	if min < 0 {
+		configurationError("MapMinLength")
+	}
+	return func(values M) error {
+		if len(values) >= min {
+			return nil
+		}
+		return newLengthError(CodeMinLength, len(values), min, nil, LengthEntries)
+	}
+}
+
+// MapMaxLength requires a map to contain at most max entries.
+func MapMaxLength[M ~map[K]V, K comparable, V any](max int) Rule[M] {
+	if max < 0 {
+		configurationError("MapMaxLength")
+	}
+	return func(values M) error {
+		if len(values) <= max {
+			return nil
+		}
+		return newLengthError(CodeMaxLength, len(values), 0, &max, LengthEntries)
+	}
+}
+
+// MapLengthBetween requires a map length in the inclusive interval [min, max].
+func MapLengthBetween[M ~map[K]V, K comparable, V any](min, max int) Rule[M] {
+	if min < 0 || max < 0 || min > max {
+		configurationError("MapLengthBetween")
+	}
+	return func(values M) error {
+		if len(values) >= min && len(values) <= max {
+			return nil
+		}
+		return newLengthError(CodeLengthBetween, len(values), min, &max, LengthEntries)
+	}
+}
+
+// MapEach applies every child rule to every typed entry. Failing entries are
+// ordered by order after validation; successful entries do not invoke order.
+func MapEach[M ~map[K]V, K comparable, V any](order KeyOrder[K], rules ...Rule[Entry[K, V]]) Rule[M] {
+	order = checkedKeyOrder(order, "MapEach")
+	children := checkRules("MapEach", rules)
+	return func(values M) error {
+		var failures []mapFailure[K]
+		for key, value := range values {
+			var entryFailures []error
+			entry := Entry[K, V]{Key: key, Value: value}
+			for _, rule := range children {
+				entryFailures = appendFailure(entryFailures, rule(entry))
 			}
-			out = append(out, err)
-			if err.Fatal {
-				return out
-			}
-		}
-	}
-	return out
-}
-
-// MapsForEach validates each entry in the map using the given rules.
-func MapsForEach[K comparable, V any](rules ...MapEntryRule[K, V]) MapRule[K, V] {
-	return func(values map[K]V) Errors {
-		var errs Errors
-		for k, v := range values {
-			for _, rule := range rules {
-				if err := rule(k, v); err != nil {
-					err.Field = fmt.Sprintf("%v", k)
-					errs = append(errs, err)
-					if err.Fatal {
-						return errs
-					}
-				}
-			}
-		}
-		return errs
-	}
-}
-
-// MapsMinKeys validates that the map has at least the given number of keys.
-func MapsMinKeys[K comparable, V any](min int) MapRule[K, V] {
-	return func(values map[K]V) Errors {
-		if len(values) < min {
-			return SingleErrorSlice("", "min", map[string]any{"min": min, "actual": len(values)}, false)
-		}
-		return nil
-	}
-}
-
-// MapsMaxKeys validates that the map has at most the given number of keys.
-func MapsMaxKeys[K comparable, V any](max int) MapRule[K, V] {
-	return func(values map[K]V) Errors {
-		if len(values) > max {
-			return SingleErrorSlice("", "max", map[string]any{"max": max, "actual": len(values)}, false)
-		}
-		return nil
-	}
-}
-
-func MapsLength[K comparable, V any](length int) MapRule[K, V] {
-	return func(values map[K]V) Errors {
-		if len(values) != length {
-			return SingleErrorSlice("", "length", map[string]any{"length": length, "actual": len(values)}, false)
-		}
-		return nil
-	}
-}
-
-func MapsLengthBetween[K comparable, V any](min, max int) MapRule[K, V] {
-	return func(values map[K]V) Errors {
-		if len(values) < min || len(values) > max {
-			return SingleErrorSlice("", "between", map[string]any{"min": min, "max": max, "actual": len(values)}, false)
-		}
-		return nil
-	}
-}
-
-// MapsKeysOneOf validates that the map has only the given keys.
-func MapsKeysOneOf[K comparable, V any](allowed ...K) MapRule[K, V] {
-	set := make(map[K]struct{}, len(allowed))
-	for _, v := range allowed {
-		set[v] = struct{}{}
-	}
-	return func(m map[K]V) Errors {
-		for k := range m {
-			if _, ok := set[k]; !ok {
-				return SingleErrorSlice("", "one_of", map[string]any{"value": k}, false)
+			if err := combine(entryFailures); err != nil {
+				failures = append(failures, mapFailure[K]{key: key, err: err})
 			}
 		}
-		return nil
+		return finishMapFailures(order, failures)
 	}
 }
 
-// MapsKeysNotOneOf validates that the map does not have the given keys.
-func MapsKeysNotOneOf[K comparable, V any](disallowed ...K) MapRule[K, V] {
-	set := make(map[K]struct{}, len(disallowed))
-	for _, v := range disallowed {
-		set[v] = struct{}{}
-	}
-	return func(m map[K]V) Errors {
-		for k := range m {
-			if _, ok := set[k]; ok {
-				return SingleErrorSlice("", "not_one_of", map[string]any{"value": k}, false)
+// MapKeys applies every child rule to every key.
+func MapKeys[M ~map[K]V, K comparable, V any](order KeyOrder[K], rules ...Rule[K]) Rule[M] {
+	order = checkedKeyOrder(order, "MapKeys")
+	children := checkRules("MapKeys", rules)
+	return func(values M) error {
+		var failures []mapFailure[K]
+		for key := range values {
+			var keyFailures []error
+			for _, rule := range children {
+				keyFailures = appendFailure(keyFailures, rule(key))
+			}
+			if err := combine(keyFailures); err != nil {
+				failures = append(failures, mapFailure[K]{key: key, err: err})
 			}
 		}
-		return nil
+		return finishMapFailures(order, failures)
 	}
 }
 
-// MapsValuesOneOf validates that the map has only the given values.
-func MapsValuesOneOf[K comparable, V comparable](allowed ...V) MapRule[K, V] {
-	set := make(map[V]struct{}, len(allowed))
-	for _, v := range allowed {
-		set[v] = struct{}{}
-	}
-	return func(m map[K]V) Errors {
-		for _, v := range m {
-			if _, ok := set[v]; !ok {
-				return SingleErrorSlice("", "one_of", map[string]any{"value": v}, false)
+// MapValues applies every child rule to every value.
+func MapValues[M ~map[K]V, K comparable, V any](order KeyOrder[K], rules ...Rule[V]) Rule[M] {
+	order = checkedKeyOrder(order, "MapValues")
+	children := checkRules("MapValues", rules)
+	return func(values M) error {
+		var failures []mapFailure[K]
+		for key, value := range values {
+			var valueFailures []error
+			for _, rule := range children {
+				valueFailures = appendFailure(valueFailures, rule(value))
+			}
+			if err := combine(valueFailures); err != nil {
+				failures = append(failures, mapFailure[K]{key: key, err: err})
 			}
 		}
-		return nil
+		return finishMapFailures(order, failures)
 	}
 }
 
-// MapsValuesNotOneOf validates that the map does not have the given values.
-func MapsValuesNotOneOf[K comparable, V comparable](disallowed ...V) MapRule[K, V] {
-	set := make(map[V]struct{}, len(disallowed))
-	for _, v := range disallowed {
-		set[v] = struct{}{}
-	}
-	return func(m map[K]V) Errors {
-		for _, v := range m {
-			if _, ok := set[v]; ok {
-				return SingleErrorSlice("", "not_one_of", map[string]any{"value": v}, false)
-			}
-		}
-		return nil
-	}
-}
-
-// MapsKey validates the value of the given key.
-func MapsKey[K comparable, V any](key K, rules ...Rule[V]) MapRule[K, V] {
-	return func(m map[K]V) Errors {
-		v, ok := m[key]
+// MapRequiredKey validates a present key and reports key_required when absent.
+func MapRequiredKey[M ~map[K]V, K comparable, V any](key K, order KeyOrder[K], rules ...Rule[V]) Rule[M] {
+	order = checkedKeyOrder(order, "MapRequiredKey")
+	children := checkRules("MapRequiredKey", rules)
+	return func(values M) error {
+		value, ok := values[key]
 		if !ok {
-			return SingleErrorSlice("", "not_found", map[string]any{"key": key}, false)
+			return at(Segment{Kind: KeySegment, Name: order.Text(key)}, NewViolation(CodeKeyRequired, nil))
 		}
-		var errs Errors
-		for _, rule := range rules {
-			err := rule(v)
-			if err != nil {
-				err.Field = fmt.Sprintf("%v", key)
-				errs = append(errs, err)
-				if err.Fatal {
-					return errs
-				}
-			}
+		var failures []error
+		for _, rule := range children {
+			failures = appendFailure(failures, rule(value))
 		}
-		return errs
+		if err := combine(failures); err != nil {
+			return at(Segment{Kind: KeySegment, Name: order.Text(key)}, err)
+		}
+		return nil
 	}
+}
+
+// MapOptionalKey validates a present key and succeeds when absent.
+func MapOptionalKey[M ~map[K]V, K comparable, V any](key K, order KeyOrder[K], rules ...Rule[V]) Rule[M] {
+	order = checkedKeyOrder(order, "MapOptionalKey")
+	children := checkRules("MapOptionalKey", rules)
+	return func(values M) error {
+		value, ok := values[key]
+		if !ok {
+			return nil
+		}
+		var failures []error
+		for _, rule := range children {
+			failures = appendFailure(failures, rule(value))
+		}
+		if err := combine(failures); err != nil {
+			return at(Segment{Kind: KeySegment, Name: order.Text(key)}, err)
+		}
+		return nil
+	}
+}
+
+// MapKeysOneOf requires every map key to be in allowed.
+func MapKeysOneOf[M ~map[K]V, K comparable, V any](order KeyOrder[K], allowed ...K) Rule[M] {
+	order = checkedKeyOrder(order, "MapKeysOneOf")
+	set := make(map[K]struct{}, len(allowed))
+	for _, key := range allowed {
+		set[key] = struct{}{}
+	}
+	return func(values M) error {
+		var failures []mapFailure[K]
+		for key := range values {
+			if _, ok := set[key]; ok {
+				continue
+			}
+			failures = append(failures, mapFailure[K]{key: key, err: NewViolation(CodeOneOf, nil)})
+		}
+		return finishMapFailures(order, failures)
+	}
+}
+
+// MapKeysNotOneOf rejects every map key in forbidden.
+func MapKeysNotOneOf[M ~map[K]V, K comparable, V any](order KeyOrder[K], forbidden ...K) Rule[M] {
+	order = checkedKeyOrder(order, "MapKeysNotOneOf")
+	set := make(map[K]struct{}, len(forbidden))
+	for _, key := range forbidden {
+		set[key] = struct{}{}
+	}
+	return func(values M) error {
+		var failures []mapFailure[K]
+		for key := range values {
+			if _, ok := set[key]; !ok {
+				continue
+			}
+			failures = append(failures, mapFailure[K]{key: key, err: NewViolation(CodeNotOneOf, nil)})
+		}
+		return finishMapFailures(order, failures)
+	}
+}
+
+type mapFailure[K comparable] struct {
+	key K
+	err error
+}
+
+func checkedKeyOrder[K comparable](order KeyOrder[K], constructor string) KeyOrder[K] {
+	if order.Less == nil || order.Text == nil {
+		configurationError(constructor)
+	}
+	return order
+}
+
+func finishMapFailures[K comparable](order KeyOrder[K], failures []mapFailure[K]) error {
+	if len(failures) == 0 {
+		return nil
+	}
+	slices.SortFunc(failures, func(left, right mapFailure[K]) int {
+		if order.Less(left.key, right.key) {
+			return -1
+		}
+		if order.Less(right.key, left.key) {
+			return 1
+		}
+		return 0
+	})
+	var result []error
+	for _, failure := range failures {
+		result = appendFailure(result, at(Segment{
+			Kind: KeySegment,
+			Name: order.Text(failure.key),
+		}, failure.err))
+	}
+	return combine(result)
 }

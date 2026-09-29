@@ -2,51 +2,78 @@ package validation
 
 import "time"
 
-// TimeBeforeOrEqual validates that the time is before the given time.
-func TimeBeforeOrEqual(other time.Time) Rule[time.Time] {
-	return func(value time.Time) *Error {
-		if value.After(other) {
-			return &Error{Code: "before", Params: map[string]any{"value": other}}
+// Time checks whether a string can be parsed with a Go time layout.
+func Time[T ~string](layout string) Rule[T] {
+	if layout == "" {
+		configurationError("Time")
+	}
+	return func(value T) error {
+		if _, err := time.Parse(layout, string(value)); err != nil {
+			return NewViolation(CodeTime, nil)
 		}
 		return nil
 	}
 }
 
-// TimeBefore validates that the time is before the given time.
+// TimeBefore validates that value is strictly before other.
 func TimeBefore(other time.Time) Rule[time.Time] {
-	return func(value time.Time) *Error {
+	return func(value time.Time) error {
 		if !value.Before(other) {
-			return &Error{Code: "before", Params: map[string]any{"value": other}}
+			return upperBound(CodeBefore, other, false)
 		}
 		return nil
 	}
 }
 
-// TimeAfterOrEqual validates that the time is after the given time.
-func TimeAfterOrEqual(other time.Time) Rule[time.Time] {
-	return func(value time.Time) *Error {
-		if value.Before(other) {
-			return &Error{Code: "after", Params: map[string]any{"value": other}}
+// TimeBeforeOrEqual validates that value is before or equal to other.
+func TimeBeforeOrEqual(other time.Time) Rule[time.Time] {
+	return func(value time.Time) error {
+		if value.After(other) {
+			return upperBound(CodeBeforeOrEqual, other, true)
 		}
 		return nil
 	}
 }
 
-// TimeAfter validates that the time is after the given time.
+// TimeAfter validates that value is strictly after other.
 func TimeAfter(other time.Time) Rule[time.Time] {
-	return func(value time.Time) *Error {
+	return func(value time.Time) error {
 		if !value.After(other) {
-			return &Error{Code: "after", Params: map[string]any{"value": other}}
+			return lowerBound(CodeAfter, other, false)
 		}
 		return nil
 	}
 }
 
-// TimeBetween validates that the time is between the given times.
+// TimeAfterOrEqual validates that value is after or equal to other.
+func TimeAfterOrEqual(other time.Time) Rule[time.Time] {
+	return func(value time.Time) error {
+		if value.Before(other) {
+			return lowerBound(CodeAfterOrEqual, other, true)
+		}
+		return nil
+	}
+}
+
+// TimeBetween validates that value is in the inclusive instant interval
+// [min, max].
 func TimeBetween(min, max time.Time) Rule[time.Time] {
-	return func(value time.Time) *Error {
+	if min.After(max) {
+		configurationError("TimeBetween")
+	}
+	return func(value time.Time) error {
 		if value.Before(min) || value.After(max) {
-			return &Error{Code: "between", Params: map[string]any{"min": min, "max": max, "value": value}}
+			return rangeBounds(CodeBetween, min, max)
+		}
+		return nil
+	}
+}
+
+// TimeNotZero rejects the zero time using time.Time.IsZero.
+func TimeNotZero() Rule[time.Time] {
+	return func(value time.Time) error {
+		if value.IsZero() {
+			return NewViolation(CodeNotZero, nil)
 		}
 		return nil
 	}

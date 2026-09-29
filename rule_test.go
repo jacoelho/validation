@@ -1,789 +1,320 @@
 package validation_test
 
 import (
+	"errors"
 	"reflect"
-	"strings"
 	"testing"
-	"time"
 
-	"github.com/jacoelho/validation"
+	v "github.com/jacoelho/validation"
 )
 
-func TestZero(t *testing.T) {
-	t.Run("string", func(t *testing.T) {
-		rule := validation.NotZero[string]()
-
-		tests := []struct {
-			name    string
-			value   string
-			wantErr bool
-			errCode string
-		}{
-			{
-				name:    "empty string should fail",
-				value:   "",
-				wantErr: true,
-				errCode: "zero",
-			},
-			{
-				name:    "non-empty string should pass",
-				value:   "hello",
-				wantErr: false,
-			},
-			{
-				name:    "whitespace string should pass",
-				value:   " ",
-				wantErr: false,
-			},
+func assertIssues(t *testing.T, err error, wantCodes []v.Code, wantPaths []string) {
+	t.Helper()
+	issues := v.Issues(err)
+	if len(issues) != len(wantCodes) {
+		t.Fatalf("issues = %v; want %d failures", v.Format(err), len(wantCodes))
+	}
+	for i, issue := range issues {
+		if issue.Code != wantCodes[i] || v.FormatPath(issue.Path) != wantPaths[i] {
+			t.Errorf("issue[%d] = %s: %s; want %s: %s", i, v.FormatPath(issue.Path), issue.Code, wantPaths[i], wantCodes[i])
 		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				err := rule(tt.value)
-				if tt.wantErr {
-					if err == nil {
-						t.Error("expected error but got nil")
-					} else if err.Code != tt.errCode {
-						t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-					}
-				} else {
-					if err != nil {
-						t.Errorf("expected no error but got %v", err)
-					}
-				}
-			})
-		}
-	})
-
-	t.Run("int", func(t *testing.T) {
-		rule := validation.NotZero[int]()
-
-		tests := []struct {
-			name    string
-			value   int
-			wantErr bool
-		}{
-			{
-				name:    "zero int should fail",
-				value:   0,
-				wantErr: true,
-			},
-			{
-				name:    "positive int should pass",
-				value:   5,
-				wantErr: false,
-			},
-			{
-				name:    "negative int should pass",
-				value:   -5,
-				wantErr: false,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				err := rule(tt.value)
-				if tt.wantErr && err == nil {
-					t.Error("expected error but got nil")
-				}
-				if !tt.wantErr && err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			})
-		}
-	})
-
-	t.Run("bool", func(t *testing.T) {
-		rule := validation.NotZero[bool]()
-
-		tests := []struct {
-			name    string
-			value   bool
-			wantErr bool
-		}{
-			{
-				name:    "false bool should fail (zero value)",
-				value:   false,
-				wantErr: true,
-			},
-			{
-				name:    "true bool should pass",
-				value:   true,
-				wantErr: false,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				err := rule(tt.value)
-				if tt.wantErr && err == nil {
-					t.Error("expected error but got nil")
-				}
-				if !tt.wantErr && err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			})
-		}
-	})
-
-	t.Run("pointer", func(t *testing.T) {
-		rule := validation.NotZero[*string]()
-
-		value := "test"
-
-		tests := []struct {
-			name    string
-			value   *string
-			wantErr bool
-		}{
-			{
-				name:    "nil pointer should fail",
-				value:   nil,
-				wantErr: true,
-			},
-			{
-				name:    "non-nil pointer should pass",
-				value:   &value,
-				wantErr: false,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				err := rule(tt.value)
-				if tt.wantErr && err == nil {
-					t.Error("expected error but got nil")
-				}
-				if !tt.wantErr && err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			})
-		}
-	})
-}
-
-func TestNotZeroableTime(t *testing.T) {
-	rule := validation.NotZeroable[time.Time]()
-
-	now := time.Now()
-	var zeroTime time.Time
-
-	tests := []struct {
-		name    string
-		value   time.Time
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "zero time should fail",
-			value:   zeroTime,
-			wantErr: true,
-			errCode: "zero",
-		},
-		{
-			name:    "non-zero time should pass",
-			value:   now,
-			wantErr: false,
-		},
-		{
-			name:    "epoch time should pass",
-			value:   time.Unix(0, 0),
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
 	}
 }
 
-func TestRuleNot(t *testing.T) {
-	// Create a rule that fails for empty strings
-	baseRule := validation.NotZero[string]()
-	notRule := validation.RuleNot(baseRule)
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "empty string should pass (negated required)",
-			value:   "",
-			wantErr: false,
-		},
-		{
-			name:    "non-empty string should fail (negated required)",
-			value:   "hello",
-			wantErr: true,
-			errCode: "not",
-		},
+func TestAllExhaustiveAndOccurrenceOrder(t *testing.T) {
+	first, second := errors.New("first"), errors.New("second")
+	calls := 0
+	shared := v.Rule[int](func(int) error { calls++; return first })
+	rule := v.All(shared, func(int) error { calls++; return second }, shared)
+	err := rule.Validate(7)
+	if calls != 3 {
+		t.Fatalf("calls = %d, want 3", calls)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := notRule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
+	assertIssues(t, err, []v.Code{v.CodeExternal, v.CodeExternal, v.CodeExternal}, []string{"$", "$", "$"})
+	issues := v.Issues(err)
+	if issues[0].Err != first || issues[1].Err != second || issues[2].Err != first {
+		t.Fatalf("identity/order = %#v", issues)
+	}
+	if !errors.Is(err, first) || !errors.Is(err, second) {
+		t.Fatal("causes lost")
+	}
+	if got := v.All[int]()(0); got != nil {
+		t.Fatalf("empty All = %v", got)
+	}
+	if got := v.Struct[int]()(0); got != nil {
+		t.Fatalf("empty Struct = %v", got)
 	}
 }
 
-func TestRuleStopOnError(t *testing.T) {
-	// Create a rule that fails for empty strings
-	baseRule := validation.NotZero[string]()
-	stopRule := validation.RuleStopOnError(baseRule)
-
-	tests := []struct {
-		name      string
-		value     string
-		wantErr   bool
-		wantFatal bool
-		errCode   string
-	}{
-		{
-			name:      "empty string should fail with fatal error",
-			value:     "",
-			wantErr:   true,
-			wantFatal: true,
-			errCode:   "zero",
-		},
-		{
-			name:      "non-empty string should pass",
-			value:     "hello",
-			wantErr:   false,
-			wantFatal: false,
-		},
+func TestAllSnapshotsRulesAndNormalizes(t *testing.T) {
+	original := errors.New("original")
+	rules := []v.Rule[int]{func(int) error { return original }}
+	rule := v.All(rules...)
+	rules[0] = func(int) error { return nil }
+	if got := rule(0); got != original {
+		t.Fatalf("single result = %v, want original identity", got)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := stopRule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else {
-					if err.Code != tt.errCode {
-						t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-					}
-					if err.Fatal != tt.wantFatal {
-						t.Errorf("expected fatal %v, got %v", tt.wantFatal, err.Fatal)
-					}
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
+	if got := v.All(v.Equal(3))(3); got != nil {
+		t.Fatalf("success = %v", got)
 	}
 }
 
-func TestOr(t *testing.T) {
-	// Create rules for testing
-	minLengthRule := validation.StringsRuneMinLength[string](5)
-	containsRule := validation.StringsContains[string]("test")
-
-	// Or rule: string must be either >= 5 chars OR contain "test"
-	orRule := validation.Or(minLengthRule, containsRule)
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-	}{
-		{
-			name:    "passes first rule (long enough)",
-			value:   "hello world",
-			wantErr: false,
-		},
-		{
-			name:    "passes second rule (contains test)",
-			value:   "test",
-			wantErr: false,
-		},
-		{
-			name:    "passes both rules",
-			value:   "this is a test string",
-			wantErr: false,
-		},
-		{
-			name:    "fails both rules",
-			value:   "hi",
-			wantErr: true,
-		},
-		{
-			name:    "empty string fails both rules",
-			value:   "",
-			wantErr: true,
-		},
+func TestConditionProjectionAndCheck(t *testing.T) {
+	type Person struct {
+		Active bool
+		Name   string
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := orRule(tt.value)
-			if tt.wantErr && err == nil {
-				t.Error("expected error but got nil")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("expected no error but got %v", err)
-			}
-		})
-	}
-}
-
-func TestOrLastError(t *testing.T) {
-	// Test that Or returns the last error when all rules fail
-	rule1 := func(value string) *validation.Error {
-		return &validation.Error{Code: "first_error"}
-	}
-	rule2 := func(value string) *validation.Error {
-		return &validation.Error{Code: "second_error"}
-	}
-	rule3 := func(value string) *validation.Error {
-		return &validation.Error{Code: "third_error"}
-	}
-
-	orRule := validation.Or(rule1, rule2, rule3)
-	err := orRule("test")
-
-	if err == nil {
-		t.Fatal("expected error but got nil")
-	}
-
-	if err.Code != "third_error" {
-		t.Errorf("expected last error code 'third_error', got %q", err.Code)
-	}
-}
-
-func TestWhen(t *testing.T) {
-	// Rule that requires non-empty string
-	baseRule := validation.NotZero[string]()
-
-	// Apply rule only when string starts with "admin"
-	whenRule := validation.When(
-		func(value string) bool {
-			return len(value) > 0 && value[0:min(5, len(value))] == "admin"
-		},
-		baseRule,
-	)
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-	}{
-		{
-			name:    "condition false, empty string should pass",
-			value:   "",
-			wantErr: false,
-		},
-		{
-			name:    "condition false, user string should pass",
-			value:   "user123",
-			wantErr: false,
-		},
-		{
-			name:    "condition true, admin string should pass",
-			value:   "admin123",
-			wantErr: false,
-		},
-		{
-			name:    "condition true but empty admin should fail",
-			value:   "admin",
-			wantErr: false, // "admin" is not empty, so baseRule passes
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := whenRule(tt.value)
-			if tt.wantErr && err == nil {
-				t.Error("expected error but got nil")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("expected no error but got %v", err)
-			}
-		})
-	}
-}
-
-func TestWhenWithFailingCondition(t *testing.T) {
-	// Test When with a rule that would fail
-	minLengthRule := validation.StringsRuneMinLength[string](10)
-
-	// Apply rule only when string contains "validate"
-	whenRule := validation.When(
-		func(value string) bool {
-			return len(value) > 0 && value == "validate"
-		},
-		minLengthRule,
-	)
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-	}{
-		{
-			name:    "condition false, short string should pass",
-			value:   "hi",
-			wantErr: false,
-		},
-		{
-			name:    "condition true, but string too short should fail",
-			value:   "validate",
-			wantErr: true, // "validate" is 8 chars, but rule requires 10
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := whenRule(tt.value)
-			if tt.wantErr && err == nil {
-				t.Error("expected error but got nil")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("expected no error but got %v", err)
-			}
-		})
-	}
-}
-
-func TestUnless(t *testing.T) {
-	// Rule that requires non-empty string
-	baseRule := validation.NotZero[string]()
-
-	// Apply rule unless string starts with "guest"
-	unlessRule := validation.Unless(
-		func(value string) bool {
-			return strings.HasPrefix(value, "guest")
-		},
-		baseRule,
-	)
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-	}{
-		{
-			name:    "guest string should skip validation",
-			value:   "guest123",
-			wantErr: false,
-		},
-		{
-			name:    "non-guest string should be validated",
-			value:   "user123",
-			wantErr: false,
-		},
-		{
-			name:    "non-guest empty string should fail",
-			value:   "",
-			wantErr: true,
-		},
-		{
-			name:    "empty guest string should skip validation",
-			value:   "guest",
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := unlessRule(tt.value)
-			if tt.wantErr && err == nil {
-				t.Error("expected error but got nil")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("expected no error but got %v", err)
-			}
-		})
-	}
-}
-
-func TestComplexRuleCombination(t *testing.T) {
-	// Test complex combination of rules
-	type User struct {
-		Role string
-		Name string
-	}
-
-	// Complex rule: Name is required unless role is "guest", and if role is "admin", name must be at least 5 chars
-	nameRule := validation.Unless(
-		func(u User) bool { return u.Role == "guest" },
-		validation.When(
-			func(u User) bool { return u.Role == "admin" },
-			func(u User) *validation.Error {
-				if len(u.Name) < 5 {
-					return &validation.Error{
-						Code:   "min",
-						Params: map[string]any{"min": 5, "actual": len(u.Name)},
-					}
-				}
-				return nil
-			},
+	predicateCalls, getterCalls, failureCalls := 0, 0, 0
+	rule := v.When(func(p Person) bool { predicateCalls++; return p.Active },
+		v.Field("name", func(p Person) string { getterCalls++; return p.Name },
+			v.Check(func(s string) bool { return len(s) >= 2 }, func(string) error { failureCalls++; return v.NewViolation("short", nil) }),
 		),
 	)
-
-	tests := []struct {
-		name    string
-		user    User
-		wantErr bool
-	}{
-		{
-			name:    "guest with empty name should pass",
-			user:    User{Role: "guest", Name: ""},
-			wantErr: false,
-		},
-		{
-			name:    "admin with long name should pass",
-			user:    User{Role: "admin", Name: "administrator"},
-			wantErr: false,
-		},
-		{
-			name:    "admin with short name should fail",
-			user:    User{Role: "admin", Name: "bob"},
-			wantErr: true,
-		},
-		{
-			name:    "user with any name should pass",
-			user:    User{Role: "user", Name: "jo"},
-			wantErr: false,
-		},
+	if got := rule(Person{Name: "x"}); got != nil {
+		t.Fatalf("disabled = %v", got)
 	}
+	if predicateCalls != 1 || getterCalls != 0 || failureCalls != 0 {
+		t.Fatalf("disabled calls = %d/%d/%d", predicateCalls, getterCalls, failureCalls)
+	}
+	err := rule(Person{Active: true, Name: "x"})
+	assertIssues(t, err, []v.Code{"short"}, []string{"$.name"})
+	if predicateCalls != 2 || getterCalls != 1 || failureCalls != 1 {
+		t.Fatalf("enabled calls = %d/%d/%d", predicateCalls, getterCalls, failureCalls)
+	}
+	project := v.Project(func(p Person) string { getterCalls++; return p.Name }, v.NotEmpty[string]())
+	if got := project(Person{Name: "ok"}); got != nil || getterCalls != 2 {
+		t.Fatalf("project = %v, getter calls %d", got, getterCalls)
+	}
+	emptyProject := v.Project(func(p Person) string { getterCalls++; return p.Name })
+	if got := emptyProject(Person{}); got != nil || getterCalls != 3 {
+		t.Fatalf("empty project = %v, getter calls %d", got, getterCalls)
+	}
+}
 
+func TestPresenceGuardsAndIndependentFields(t *testing.T) {
+	type Person struct {
+		Age  *int
+		Name string
+	}
+	zero := 0
+	rule := v.All(
+		v.Field("age", func(p Person) *int { return p.Age }, v.RequiredPtr(v.Min(1))),
+		v.Field("name", func(p Person) string { return p.Name }, v.NotEmpty[string]()),
+	)
+	assertIssues(t, rule(Person{}), []v.Code{v.CodeRequired, v.CodeNotEmpty}, []string{"$.age", "$.name"})
+	assertIssues(t, rule(Person{Age: &zero}), []v.Code{v.CodeMin, v.CodeNotEmpty}, []string{"$.age", "$.name"})
+	if got := v.OptionalPtr(v.Min(1))((*int)(nil)); got != nil {
+		t.Fatalf("optional nil = %v", got)
+	}
+	if got := v.RequiredPtr[int]()((*int)(nil)); got == nil {
+		t.Fatal("empty required guard skipped")
+	}
+	optional := v.OptionalValue(func(p Person) (int, bool) {
+		if p.Age == nil {
+			return 0, false
+		}
+		return *p.Age, true
+	}, v.Zero[int]())
+	if got := optional(Person{Age: &zero}); got != nil {
+		t.Fatalf("present zero = %v", got)
+	}
+	if got := optional(Person{}); got != nil {
+		t.Fatalf("absent optional = %v", got)
+	}
+	required := v.RequiredValue(func(p Person) (int, bool) {
+		if p.Age == nil {
+			return 0, false
+		}
+		return *p.Age, true
+	})
+	assertIssues(t, required(Person{}), []v.Code{v.CodeRequired}, []string{"$"})
+}
+
+func TestComparableRules(t *testing.T) {
+	tests := []struct {
+		name  string
+		rule  v.Rule[int]
+		input int
+		code  v.Code
+	}{
+		{"equal", v.Equal(3), 4, v.CodeEqual},
+		{"not equal", v.NotEqual(3), 3, v.CodeNotEqual},
+		{"zero", v.Zero[int](), 1, v.CodeZero},
+		{"not zero", v.NotZero[int](), 0, v.CodeNotZero},
+		{"one of", v.OneOf(1, 2), 3, v.CodeOneOf},
+		{"not one of", v.NotOneOf(1, 2), 2, v.CodeNotOneOf},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { assertIssues(t, tt.rule(tt.input), []v.Code{tt.code}, []string{"$"}) })
+	}
+	if got := v.NotOneOf[int]()(3); got != nil {
+		t.Fatalf("empty NotOneOf = %v", got)
+	}
+	if got := v.OneOf[int]()(3); got == nil {
+		t.Fatal("empty OneOf passed")
+	}
+	allowed := []int{3}
+	rule := v.OneOf(allowed...)
+	allowed[0] = 4
+	if got := rule(3); got != nil {
+		t.Fatalf("membership config changed = %v", got)
+	}
+}
+
+func TestInvalidConfiguration(t *testing.T) {
+	tests := []struct {
+		name, constructor string
+		construct         func()
+	}{
+		{"nil child", "All", func() { v.All(v.Rule[int](nil)) }},
+		{"nil predicate", "When", func() { v.When[int](nil) }},
+		{"nil factory", "Check", func() { v.Check(func(int) bool { return false }, nil) }},
+		{"nil getter", "Project", func() { v.Project[int, int](nil) }},
+		{"empty field", "Field", func() { v.Field("", func(int) int { return 0 }) }},
+		{"nil field getter", "Field", func() { v.Field[int, int]("age", nil) }},
+		{"empty code", "NewViolation", func() { v.NewViolation("", nil) }},
+		{"nil factory result", "Check", func() { v.Check(func(int) bool { return false }, func(int) error { return nil })(0) }},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := nameRule(tt.user)
-			if tt.wantErr && err == nil {
-				t.Error("expected error but got nil")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("expected no error but got %v", err)
-			}
+			defer func() {
+				p := recover()
+				ce, ok := p.(*v.ConfigurationError)
+				if !ok || ce.Constructor() != tt.constructor {
+					t.Errorf("panic = %v, want ConfigurationError(%s)", p, tt.constructor)
+				}
+			}()
+			tt.construct()
 		})
 	}
 }
 
-func TestRuleTypes(t *testing.T) {
-	t.Run("different types with NotZero", func(t *testing.T) {
-		stringRule := validation.NotZero[string]()
-		intRule := validation.NotZero[int]()
-		floatRule := validation.NotZero[float64]()
-
-		// Test string
-		if err := stringRule(""); err == nil {
-			t.Error("expected empty string to fail")
+func TestIssuePathSnapshots(t *testing.T) {
+	type Item struct{ Name string }
+	rule := v.Field("items", func(items []Item) []Item { return items }, v.Each[[]Item](v.Field("name", func(i Item) string { return i.Name }, v.NotEmpty[string](), v.RuneMinLength[string](2))))
+	original := []Item{{Name: ""}, {Name: ""}}
+	issues := v.Issues(rule(original))
+	want := []string{"$.items[0].name", "$.items[0].name", "$.items[1].name", "$.items[1].name"}
+	if len(issues) != len(want) {
+		t.Fatalf("issues = %v", issues)
+	}
+	for i, issue := range issues {
+		if got := v.FormatPath(issue.Path); got != want[i] {
+			t.Errorf("path[%d] = %s, want %s", i, got, want[i])
 		}
-		if err := stringRule("test"); err != nil {
-			t.Error("expected non-empty string to pass")
-		}
-
-		// Test int
-		if err := intRule(0); err == nil {
-			t.Error("expected zero int to fail")
-		}
-		if err := intRule(42); err != nil {
-			t.Error("expected non-zero int to pass")
-		}
-
-		// Test float
-		if err := floatRule(0.0); err == nil {
-			t.Error("expected zero float to fail")
-		}
-		if err := floatRule(3.14); err != nil {
-			t.Error("expected non-zero float to pass")
-		}
-	})
+	}
+	issues[0].Path[0].Name = "changed"
+	if got := v.FormatPath(issues[1].Path); got != want[1] {
+		t.Errorf("aliased path = %s", got)
+	}
+	if !reflect.DeepEqual(original, []Item{{Name: ""}, {Name: ""}}) {
+		t.Fatal("input changed")
+	}
 }
 
-func TestOneOf(t *testing.T) {
-	tests := []struct {
-		name      string
-		allowed   []string
-		value     string
-		wantErr   bool
-		errCode   string
-		errParams map[string]any
-	}{
-		{
-			name:    "value in allowed list",
-			allowed: []string{"a", "b", "c"},
-			value:   "b",
-			wantErr: false,
-		},
-		{
-			name:      "value not in allowed list",
-			allowed:   []string{"a", "b", "c"},
-			value:     "d",
-			wantErr:   true,
-			errCode:   "one_of",
-			errParams: map[string]any{"value": "d"},
-		},
-		{
-			name:      "empty allowed list",
-			allowed:   []string{},
-			value:     "any",
-			wantErr:   true,
-			errCode:   "one_of",
-			errParams: map[string]any{"value": "any"},
-		},
-		{
-			name:    "empty value in allowed list",
-			allowed: []string{"", "a", "b"},
-			value:   "",
-			wantErr: false,
-		},
+func TestUnlessAndPanicPropagation(t *testing.T) {
+	calls := 0
+	rule := v.Unless(func(n int) bool { calls++; return n == 0 }, v.Positive[int](), v.LessThan(10))
+	if err := rule(0); err != nil || calls != 1 {
+		t.Fatalf("disabled result=%v calls=%d", err, calls)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rule := validation.OneOf(tt.allowed...)
-			err := rule(tt.value)
-
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
-					return
-				}
-				if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-				if !reflect.DeepEqual(err.Params, tt.errParams) {
-					t.Errorf("expected error params %v, got %v", tt.errParams, err.Params)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-				}
-			}
-		})
+	assertIssues(t, rule(-1), []v.Code{v.CodePositive}, []string{"$"})
+	if calls != 2 {
+		t.Fatalf("predicate calls = %d", calls)
 	}
-
-	t.Run("different types", func(t *testing.T) {
-		// Test with integers
-		intRule := validation.OneOf(1, 2, 3)
-		if err := intRule(2); err != nil {
-			t.Errorf("unexpected error for valid integer: %v", err)
+	panicValue := errors.New("callback panic")
+	panics := v.All(v.Rule[int](func(int) error { panic(panicValue) }), v.Rule[int](func(int) error { t.Fatal("later rule ran after panic"); return nil }))
+	defer func() {
+		if got := recover(); got != panicValue {
+			t.Errorf("panic = %v, want original", got)
 		}
-		if err := intRule(4); err == nil {
-			t.Error("expected error for invalid integer, got nil")
-		}
-
-		type Status string
-		statusRule := validation.OneOf(Status("active"), Status("inactive"))
-		if err := statusRule(Status("active")); err != nil {
-			t.Errorf("unexpected error for valid status: %v", err)
-		}
-		if err := statusRule(Status("pending")); err == nil {
-			t.Error("expected error for invalid status, got nil")
-		}
-	})
+	}()
+	panics(0)
 }
 
-func TestNotOneOf(t *testing.T) {
-	tests := []struct {
-		name       string
-		disallowed []string
-		value      string
-		wantErr    bool
-		errCode    string
-		errParams  map[string]any
-	}{
-		{
-			name:       "value not in disallowed list",
-			disallowed: []string{"a", "b", "c"},
-			value:      "d",
-			wantErr:    false,
-		},
-		{
-			name:       "value in disallowed list",
-			disallowed: []string{"a", "b", "c"},
-			value:      "b",
-			wantErr:    true,
-			errCode:    "not_one_of",
-			errParams:  map[string]any{"value": "b"},
-		},
-		{
-			name:       "empty disallowed list",
-			disallowed: []string{},
-			value:      "any",
-			wantErr:    false,
-		},
-		{
-			name:       "empty value in disallowed list",
-			disallowed: []string{"", "a", "b"},
-			value:      "",
-			wantErr:    true,
-			errCode:    "not_one_of",
-			errParams:  map[string]any{"value": ""},
-		},
+func TestNestedPointerAndEmptyGroups(t *testing.T) {
+	var absent *int
+	presentLayer := &absent
+	rule := v.RequiredPtr(v.RequiredPtr(v.Zero[int]()))
+	assertIssues(t, rule(presentLayer), []v.Code{v.CodeRequired}, []string{"$"})
+	if got := v.OptionalPtr(v.RequiredPtr(v.Zero[int]()))((**int)(nil)); got != nil {
+		t.Fatalf("outer optional = %v", got)
 	}
+	if got := v.When(func(int) bool { return true })(0); got != nil {
+		t.Fatalf("empty enabled group = %v", got)
+	}
+	called := 0
+	field := v.Field("x", func(n int) int { called++; return n })
+	if got := field(1); got != nil || called != 1 {
+		t.Fatalf("empty field = %v, getter calls %d", got, called)
+	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rule := validation.NotOneOf(tt.disallowed...)
-			err := rule(tt.value)
+type testPointerError struct{}
 
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
-					return
-				}
-				if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-				if !reflect.DeepEqual(err.Params, tt.errParams) {
-					t.Errorf("expected error params %v, got %v", tt.errParams, err.Params)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-				}
+func (*testPointerError) Error() string { return "test pointer error" }
+
+func TestCustomTypedNilIsNotSuccess(t *testing.T) {
+	// A typed nil converted to error is still a non-nil interface. Reporting it
+	// is outside the extension contract; evaluation must not silently erase it.
+	var pointer *testPointerError
+	var err error = pointer
+	rule := v.All(v.Rule[int](func(int) error { return err }))
+	if got := rule(0); got == nil {
+		t.Fatal("typed-nil callback was normalized to success")
+	}
+}
+
+func TestNoFailureCapAcrossLargeSlice(t *testing.T) {
+	firstCalls, secondCalls := 0, 0
+	first := v.Rule[int](func(int) error { firstCalls++; return v.NewViolation("first", nil) })
+	second := v.Rule[int](func(int) error { secondCalls++; return v.NewViolation("second", nil) })
+	values := make([]int, 257)
+	issues := v.Issues(v.Each[[]int](first, second)(values))
+	if len(issues) != 514 || firstCalls != 257 || secondCalls != 257 {
+		t.Fatalf("issues=%d calls=%d/%d, want 514 and 257/257", len(issues), firstCalls, secondCalls)
+	}
+	for i := 0; i < 257; i++ {
+		for child, code := range []v.Code{"first", "second"} {
+			issue := issues[2*i+child]
+			if issue.Code != code || len(issue.Path) != 1 || issue.Path[0].Kind != v.IndexSegment || issue.Path[0].Index != i {
+				t.Fatalf("issue[%d]=%+v, want %s at %d", 2*i+child, issue, code, i)
 			}
-		})
+		}
 	}
+}
 
-	t.Run("different types", func(t *testing.T) {
-		intRule := validation.NotOneOf(1, 2, 3)
-		if err := intRule(4); err != nil {
-			t.Errorf("unexpected error for valid integer: %v", err)
-		}
-		if err := intRule(2); err == nil {
-			t.Error("expected error for invalid integer, got nil")
-		}
+func TestValidErrorBoundaryStaysLiteralNil(t *testing.T) {
+	rule := v.All(v.Equal(3), v.NotZero[int](), v.Min(2))
+	returnError := func() error { return rule.Validate(3) }
+	if err := returnError(); err != nil || v.Issues(err) != nil || v.Format(err) != "" {
+		t.Fatalf("valid boundary returned %v", err)
+	}
+}
 
-		type Status string
-		statusRule := validation.NotOneOf(Status("invalid"), Status("error"))
-		if err := statusRule(Status("active")); err != nil {
-			t.Errorf("unexpected error for valid status: %v", err)
+func TestCheckUsesOneCompoundPredicate(t *testing.T) {
+	type Contact struct{ Email, Phone string }
+	a, b, c, factory := 0, 0, 0, 0
+	check := v.Check(func(contact Contact) bool {
+		a++
+		if contact.Email != "" {
+			return true
 		}
-		if err := statusRule(Status("invalid")); err == nil {
-			t.Error("expected error for invalid status, got nil")
+		b++
+		if contact.Phone == "special" {
+			return true
 		}
-	})
+		c++
+		return contact.Email == "" && contact.Phone == "ok"
+	}, func(Contact) error { factory++; return v.NewViolation("contact_required", nil) })
+	if err := check(Contact{Phone: "ok"}); err != nil {
+		t.Fatalf("last alternative success=%v", err)
+	}
+	if a != 1 || b != 1 || c != 1 || factory != 0 {
+		t.Fatalf("success calls=%d/%d/%d factory=%d", a, b, c, factory)
+	}
+	assertIssues(t, check(Contact{}), []v.Code{"contact_required"}, []string{"$"})
+	if a != 2 || b != 2 || c != 2 || factory != 1 {
+		t.Fatalf("failure calls=%d/%d/%d factory=%d", a, b, c, factory)
+	}
 }

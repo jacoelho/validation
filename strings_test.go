@@ -1,405 +1,211 @@
 package validation_test
 
 import (
+	"errors"
+	"regexp"
 	"testing"
 
-	"github.com/jacoelho/validation"
+	validation "github.com/jacoelho/validation"
 )
 
-func TestStringsRuneMinLength(t *testing.T) {
-	rule := validation.StringsRuneMinLength[string](3)
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-		errCode string
+func TestStringByteAndRuneLengths(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		rule validation.Rule[string]
+		text string
+		want validation.Code
 	}{
-		{
-			name:    "string shorter than minimum should fail",
-			value:   "ab",
-			wantErr: true,
-			errCode: "min",
-		},
-		{
-			name:    "string equal to minimum should pass",
-			value:   "abc",
-			wantErr: false,
-		},
-		{
-			name:    "string longer than minimum should pass",
-			value:   "abcd",
-			wantErr: false,
-		},
-		{
-			name:    "empty string should fail",
-			value:   "",
-			wantErr: true,
-			errCode: "min",
-		},
-		{
-			name:    "unicode string with correct rune count should pass",
-			value:   "🙂🙃😊", // 3 runes
-			wantErr: false,
-		},
-		{
-			name:    "unicode string with insufficient rune count should fail",
-			value:   "🙂🙃", // 2 runes
-			wantErr: true,
-			errCode: "min",
-		},
+		{"byte exact boundary", validation.ByteLength[string](2), "é", ""},
+		{"byte minimum rejects", validation.ByteMinLength[string](3), "é", validation.CodeByteMinLength},
+		{"byte maximum rejects", validation.ByteMaxLength[string](1), "é", validation.CodeByteMaxLength},
+		{"rune exact distinguishes bytes", validation.RuneLength[string](2), "e\u0301", ""},
+		{"rune maximum rejects", validation.RuneMaxLength[string](1), "e\u0301", validation.CodeRuneMaxLength},
+		{"rune range boundary", validation.RuneLengthBetween[string](2, 2), "e\u0301", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.rule(test.text)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			requirePrimitiveCodes(t, err, test.want)
+		})
+	}
+}
+
+func TestStringInvalidUTF8AndPredicates(t *testing.T) {
+	invalid := string([]byte{0xff, 0xfe})
+	if err := validation.RuneLength[string](2)(invalid); err != nil {
+		t.Fatalf("invalid bytes still count as two replacement runes: %v", err)
+	}
+	requirePrimitiveCodes(t, validation.UTF8[string]()(invalid), validation.CodeUTF8)
+
+	for _, test := range []struct {
+		name string
+		rule validation.Rule[string]
+		text string
+		want validation.Code
+	}{
+		{"not empty rejects empty", validation.NotEmpty[string](), "", validation.CodeNotEmpty},
+		{"space is content", validation.NotEmpty[string](), " ", ""},
+		{"contains is case sensitive", validation.Contains("A"), "abc", validation.CodeContains},
+		{"empty contains matches", validation.Contains(""), "", ""},
+		{"empty prefix matches", validation.HasPrefix(""), "", ""},
+		{"empty suffix matches", validation.HasSuffix(""), "", ""},
+		{"prefix matches", validation.HasPrefix("ab"), "abc", ""},
+		{"suffix matches", validation.HasSuffix("bc"), "abc", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.rule(test.text)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			requirePrimitiveCodes(t, err, test.want)
+		})
+	}
+}
+
+func TestWhitespaceRules(t *testing.T) {
+	type label string
+	notBlank := validation.NotBlank[label]()
+	trimmed := validation.Trimmed[label]()
+	for _, value := range []label{"", " \t\n", "\u00a0"} {
+		requirePrimitiveCodes(t, notBlank(value), validation.CodeNotBlank)
+	}
+	for _, value := range []label{"name", "name with spaces", "  name  "} {
+		if err := notBlank(value); err != nil {
+			t.Fatalf("%q should not be blank: %v", value, err)
+		}
+	}
+	for _, value := range []label{"", "name", "name with spaces"} {
+		if err := trimmed(value); err != nil {
+			t.Fatalf("%q should be trimmed: %v", value, err)
+		}
+	}
+	for _, value := range []label{" name", "name\u00a0", "\tname\n"} {
+		requirePrimitiveCodes(t, trimmed(value), validation.CodeTrimmed)
+	}
+	invalidUTF8 := label(string([]byte{0xff}))
+	if err := notBlank(invalidUTF8); err != nil {
+		t.Fatalf("UTF-8 validation should remain separate: %v", err)
+	}
+	requirePrimitiveCodes(t, validation.UTF8[label]()(invalidUTF8), validation.CodeUTF8)
+	combined := validation.All(
+		validation.NotBlank[string](),
+		validation.Trimmed[string](),
+		validation.Match[string](regexp.MustCompile(`^[A-Z]+$`)),
+	)
+	requirePrimitiveCodes(t, combined(" "), validation.CodeNotBlank, validation.CodeTrimmed, validation.CodeMatch)
+}
+
+func TestMatch(t *testing.T) {
+	type label string
+	containsDigits := validation.Match[label](regexp.MustCompile(`[0-9]+`))
+	if err := containsDigits("item42end"); err != nil {
+		t.Fatalf("substring should match: %v", err)
+	}
+	requirePrimitiveCodes(t, containsDigits("item"), validation.CodeMatch)
+	wholeDigits := validation.Match[label](regexp.MustCompile(`^[0-9]+$`))
+	requirePrimitiveCodes(t, wholeDigits("item42"), validation.CodeMatch)
+	if err := wholeDigits("42"); err != nil {
+		t.Fatalf("anchored expression should match entire input: %v", err)
+	}
+	if err := validation.Match[string](regexp.MustCompile(`^$`))(""); err != nil {
+		t.Fatalf("empty input should follow the pattern: %v", err)
+	}
+	defer func() {
+		if got, ok := recover().(*validation.ConfigurationError); !ok || got.Constructor() != "Match" {
+			t.Fatalf("nil pattern panic = %#v", got)
+		}
+	}()
+	validation.Match[string](nil)
+}
+
+func TestStringLengthDiagnostics(t *testing.T) {
+	err := validation.ByteLength[string](2)("x")
+	var length *validation.LengthError
+	if !errors.As(err, &length) {
+		t.Fatalf("%T is not a LengthError", err)
+	}
+	if length.Actual() != 1 || length.Minimum() != 2 {
+		t.Fatalf("length details = actual %d, minimum %d", length.Actual(), length.Minimum())
+	}
+	if max, ok := length.Maximum(); !ok || max != 2 || length.Unit() != validation.LengthBytes {
+		t.Fatalf("length maximum/unit = (%d, %v)/%q", max, ok, length.Unit())
+	}
+}
+
+func TestByteRulesPreserveNamedSlicesAndCopyConfiguration(t *testing.T) {
+	type bytesValue []byte
+	part := bytesValue{0xff}
+	rule := validation.BytesContains(part)
+	part[0] = 0
+	if err := rule(bytesValue{0xff}); err != nil {
+		t.Fatalf("constructor did not copy byte configuration: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
+	input := bytesValue{0x00, 0xff}
+	copyOfInput := append(bytesValue(nil), input...)
+	for _, test := range []struct {
+		name string
+		rule validation.Rule[bytesValue]
+		want validation.Code
+	}{
+		{"equal nil and empty", validation.BytesEqual[bytesValue](nil), ""},
+		{"not empty", validation.BytesNotEmpty[bytesValue](), ""},
+		{"length", validation.BytesLength[bytesValue](2), ""},
+		{"contains", validation.BytesContains[bytesValue](bytesValue{0xff}), ""},
+		{"prefix", validation.BytesHasPrefix[bytesValue](bytesValue{0x00}), ""},
+		{"suffix", validation.BytesHasSuffix[bytesValue](bytesValue{0xff}), ""},
+		{"UTF8 rejects invalid", validation.BytesUTF8[bytesValue](), validation.CodeUTF8},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := input
+			if test.name == "equal nil and empty" {
+				value = nil
+			}
+			if test.name == "not empty" {
+				value = bytesValue{1}
+			}
+			if test.name == "UTF8 rejects invalid" {
+				value = bytesValue{0xff}
+			}
+			err := test.rule(value)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
 				}
 			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
+				requirePrimitiveCodes(t, err, test.want)
 			}
 		})
 	}
+	if string(input) != string(copyOfInput) {
+		t.Fatalf("byte input changed from %v to %v", copyOfInput, input)
+	}
 }
 
-func TestStringsRuneMaxLength(t *testing.T) {
-	rule := validation.StringsRuneMaxLength[string](5)
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-		errCode string
+func TestStringConfigurationPanics(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		make func()
 	}{
-		{
-			name:    "string longer than maximum should fail",
-			value:   "abcdef",
-			wantErr: true,
-			errCode: "max",
-		},
-		{
-			name:    "string equal to maximum should pass",
-			value:   "abcde",
-			wantErr: false,
-		},
-		{
-			name:    "string shorter than maximum should pass",
-			value:   "abcd",
-			wantErr: false,
-		},
-		{
-			name:    "empty string should pass",
-			value:   "",
-			wantErr: false,
-		},
-		{
-			name:    "unicode string within limit should pass",
-			value:   "🙂🙃😊🎉🎊", // 5 runes
-			wantErr: false,
-		},
-		{
-			name:    "unicode string exceeding limit should fail",
-			value:   "🙂🙃😊🎉🎊🚀", // 6 runes
-			wantErr: true,
-			errCode: "max",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
+		{"negative exact length", func() { validation.ByteLength[string](-1) }},
+		{"reversed byte range", func() { validation.ByteLengthBetween[string](2, 1) }},
+		{"negative rune length", func() { validation.RuneMinLength[string](-1) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("expected configuration panic")
 				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
+			}()
+			test.make()
 		})
 	}
-}
-
-func TestStringsRuneLengthBetween(t *testing.T) {
-	rule := validation.StringsRuneLengthBetween[string](3, 7)
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "string shorter than minimum should fail",
-			value:   "ab",
-			wantErr: true,
-			errCode: "between",
-		},
-		{
-			name:    "string equal to minimum should pass",
-			value:   "abc",
-			wantErr: false,
-		},
-		{
-			name:    "string within range should pass",
-			value:   "abcde",
-			wantErr: false,
-		},
-		{
-			name:    "string equal to maximum should pass",
-			value:   "abcdefg",
-			wantErr: false,
-		},
-		{
-			name:    "string longer than maximum should fail",
-			value:   "abcdefgh",
-			wantErr: true,
-			errCode: "between",
-		},
-		{
-			name:    "empty string should fail",
-			value:   "",
-			wantErr: true,
-			errCode: "between",
-		},
-		{
-			name:    "unicode string within range should pass",
-			value:   "🙂🙃😊🎉", // 4 runes
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestStringsMatchesRegex(t *testing.T) {
-	emailRule := validation.StringsMatchesRegex[string](`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	phoneRule := validation.StringsMatchesRegex[string](`^\d{3}-\d{3}-\d{4}$`)
-
-	tests := []struct {
-		name    string
-		rule    validation.Rule[string]
-		value   string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "valid email should pass",
-			rule:    emailRule,
-			value:   "test@example.com",
-			wantErr: false,
-		},
-		{
-			name:    "invalid email should fail",
-			rule:    emailRule,
-			value:   "invalid-email",
-			wantErr: true,
-			errCode: "regex",
-		},
-		{
-			name:    "valid phone number should pass",
-			rule:    phoneRule,
-			value:   "123-456-7890",
-			wantErr: false,
-		},
-		{
-			name:    "invalid phone number should fail",
-			rule:    phoneRule,
-			value:   "123-45-6789",
-			wantErr: true,
-			errCode: "regex",
-		},
-		{
-			name:    "empty string with email pattern should fail",
-			rule:    emailRule,
-			value:   "",
-			wantErr: true,
-			errCode: "regex",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestStringsContains(t *testing.T) {
-	rule := validation.StringsContains("test")
-
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "string containing substring should pass",
-			value:   "this is a test string",
-			wantErr: false,
-		},
-		{
-			name:    "string not containing substring should fail",
-			value:   "this is a sample string",
-			wantErr: true,
-			errCode: "contains",
-		},
-		{
-			name:    "exact match should pass",
-			value:   "test",
-			wantErr: false,
-		},
-		{
-			name:    "substring at beginning should pass",
-			value:   "testing 123",
-			wantErr: false,
-		},
-		{
-			name:    "substring at end should pass",
-			value:   "unit test",
-			wantErr: false,
-		},
-		{
-			name:    "empty string should fail",
-			value:   "",
-			wantErr: true,
-			errCode: "contains",
-		},
-		{
-			name:    "case sensitive check should fail",
-			value:   "this is a TEST string",
-			wantErr: true,
-			errCode: "contains",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestStringsCustomType(t *testing.T) {
-	type CustomString string
-
-	// Test that the functions work with custom string types
-	rule := validation.StringsRuneMinLength[CustomString](3)
-
-	tests := []struct {
-		name    string
-		value   CustomString
-		wantErr bool
-	}{
-		{
-			name:    "custom string type should work",
-			value:   CustomString("hello"),
-			wantErr: false,
-		},
-		{
-			name:    "short custom string should fail",
-			value:   CustomString("hi"),
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr && err == nil {
-				t.Error("expected error but got nil")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("expected no error but got %v", err)
-			}
-		})
-	}
-}
-
-func TestStringsErrorParams(t *testing.T) {
-	t.Run("StringsRuneMinLength error params", func(t *testing.T) {
-		rule := validation.StringsRuneMinLength[string](5)
-		err := rule("abc")
-
-		if err == nil {
-			t.Fatal("expected error but got nil")
-		}
-
-		if err.Code != "min" {
-			t.Errorf("expected code 'min', got %q", err.Code)
-		}
-
-		if err.Params["min"] != 5 {
-			t.Errorf("expected min param to be 5, got %v", err.Params["min"])
-		}
-
-		if err.Params["actual"] != 3 {
-			t.Errorf("expected actual param to be 3, got %v", err.Params["actual"])
-		}
-	})
-
-	t.Run("StringsMatchesRegex error params", func(t *testing.T) {
-		pattern := `^\d+$`
-		rule := validation.StringsMatchesRegex[string](pattern)
-		err := rule("abc")
-
-		if err == nil {
-			t.Fatal("expected error but got nil")
-		}
-
-		if err.Code != "regex" {
-			t.Errorf("expected code 'regex', got %q", err.Code)
-		}
-
-		if err.Params["pattern"] != pattern {
-			t.Errorf("expected pattern param to be %q, got %v", pattern, err.Params["pattern"])
-		}
-	})
 }

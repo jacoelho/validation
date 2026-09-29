@@ -1,521 +1,212 @@
 # Validation
 
-A type-safe, composable validation library for Go that leverages generics to provide compile-time safety and runtime flexibility.
+Validation is a Go library for building structural validation rules with minimal overhead. A `Rule[T]` is `func(T) error`: it returns `nil` or all applicable failures. Requires Go 1.27+.
 
-## Features
+## Install
 
-- Type-safe: Built with Go generics for compile-time type safety
-- Composable: Combine validation rules using logical operators (`Or`, `When`, `Unless`)
-- Struct validation: Deep validation of nested structs with field-level error reporting
-- Collection support: Validate slices and maps with element-level validation
-- Rich error context: Detailed error messages with field paths and parameters
-- Extensible: Easy to create custom validation rules
-- Zero dependencies: Pure Go implementation
-- Fatal error handling: Stop validation chains on critical errors
-
-## Installation
-
-```bash
+```sh
 go get github.com/jacoelho/validation
 ```
 
-## Quick Start
+These examples describe the pending Go 1.27 refactor. Published v1.0.x tags still contain the previous API.
+
+## Validate a struct
+
+Combine field rules and call the result with a struct:
 
 ```go
 package main
 
 import (
-    "fmt"
-    "github.com/jacoelho/validation"
+	"fmt"
+	"strings"
+
+	v "github.com/jacoelho/validation"
 )
 
 type User struct {
-    Name  string
-    Email string
-    Age   int
+	Name string
+	Age  int
+}
+
+var userRule = v.Struct(
+	v.NotBlank[string]().Field("name", func(u User) string { return u.Name }),
+	v.Min(18).Field("age", func(u User) int { return u.Age }),
+)
+
+func formatLines(err error) string {
+	var lines []string
+	for _, issue := range v.Issues(err) {
+		lines = append(lines, fmt.Sprintf("%s at %s", issue.Code, v.FormatPath(issue.Path)))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func main() {
-    validator := validation.Struct(
-        validation.Field("Name", 
-            func(u User) string { return u.Name },
-            validation.NotZero[string](),
-            validation.StringsRuneMinLength[string](2),
-        ),
-        validation.Field("Email",
-            func(u User) string { return u.Email },
-            validation.NotZero[string](),
-            validation.StringsMatchesRegex[string](`^[^@]+@[^@]+\.[^@]+$`),
-        ),
-        validation.Field("Age",
-            func(u User) int { return u.Age },
-            validation.NumbersMin(18),
-            validation.NumbersMax(120),
-        ),
-    )
-
-    user := User{Name: "A", Email: "invalid", Age: 15}
-    
-    if errs := validator.Validate(user); errs.HasErrors() {
-        for _, err := range errs {
-            fmt.Println(err.Error())
-        }
-        // Output:
-        // min (field: Name) {actual: 1, min: 2}
-        // regex (field: Email) {pattern: ^[^@]+@[^@]+\.[^@]+$}
-        // min (field: Age) {actual: 15, min: 18}
-    }
+	err := userRule(User{Name: " ", Age: 16})
+	fmt.Println(v.Format(err))
+	fmt.Println(formatLines(err))
 }
 ```
 
-## Core Concepts
-
-### Rules
-
-Rules are functions that validate a single value and return an error if validation fails:
-
-```go
-type Rule[T any] func(value T) *Error
+```text
+$.name: not_blank; $.age: min
+not_blank at $.name
+min at $.age
 ```
 
-### Validators
+`Field` reads a struct field and labels its failures. `Struct` runs every field rule in order. Use `All` to combine rules for one value and `Each` to validate slice elements. `Project(getter)` adapts a rule without adding a path segment. The function forms of `Field` and `Project` accept multiple child rules.
 
-Validators coordinate multiple rules and provide structured validation for complex types like structs, slices, and maps.
+For custom output, `Issues(err)` returns each failure's `Path`, `Code`, and terminal `Err` in order. `FormatPath` renders a path; `Format(err)` produces the default `path: code` text. Use `errors.Is` or `errors.As` to inspect the error tree; detail types include `LengthError`, `BoundsError[T]`, `DuplicateError`, and `IndexError`.
 
-### Errors
+## Implement a validation interface
 
-Validation errors include field paths, error codes, and contextual parameters:
-
-```go
-type Error struct {
-    Field  string                 // Field path (e.g., "User.Address.City")
-    Code   string                 // Error code (e.g., "required", "min")
-    Params map[string]any         // Additional error parameters
-    Fatal  bool                   // Whether to stop validation
-}
-```
-
-## Validation Rules Reference
-
-### Core Rules
+If your application uses a `Validate() error` interface, delegate the method to a reusable rule:
 
 ```go
-// Basic validation
-validation.NotZero[string]()                           // Not zero value
-validation.NotZeroable[time.Time]()                    // For types with IsZero() method
-validation.OneOf[string]("admin", "user", "guest")     // Value must be one of specified values
-validation.NotOneOf[string]("root", "admin")           // Value must not be one of specified values
+package main
 
-// Logical operators
-validation.RuleNot(validation.NotZero[string]())       // Negate a rule
-validation.Or(rule1, rule2, rule3)                     // Any rule must pass
-validation.When(condition, rule)                       // Apply rule conditionally
-validation.Unless(condition, rule)                     // Apply rule unless condition
+import (
+	"fmt"
 
-// Control flow
-validation.RuleStopOnError(rule)                       // Stop validation on error
-```
-
-### String Validation
-
-```go
-validation.NotZero[string]()                                   // Non-empty
-validation.StringsRuneMinLength[string](5)                     // Min rune length
-validation.StringsRuneMaxLength[string](100)                   // Max rune length
-validation.StringsRuneLengthBetween[string](5, 100)           // Length range
-validation.StringsMatchesRegex[string](`^\w+@\w+\.\w+$`)      // Regex pattern
-validation.StringsContains[string]("@")                       // Contains substring
-```
-
-### Numeric Validation
-
-```go
-validation.NumbersMin(18)                    // Minimum value
-validation.NumbersMax(65)                    // Maximum value
-validation.NumbersBetween(18, 65)            // Range validation
-validation.NumbersPositive[int]()            // Greater than zero
-validation.NumbersNegative[int]()            // Less than zero
-validation.NumbersNonNegative[int]()         // Greater than or equal to zero
-validation.NumbersNonPositive[int]()         // Less than or equal to zero
-```
-
-### Time Validation
-
-```go
-now := time.Now()
-validation.TimeBefore(now)                   // Before specific time
-validation.TimeBeforeOrEqual(now)            // Before or equal to specific time
-validation.TimeAfter(now.AddDate(-1, 0, 0))  // After specific time
-validation.TimeAfterOrEqual(now)             // After or equal to specific time
-validation.TimeBetween(start, end)           // Between time range
-```
-
-### Slice Validation
-
-```go
-validation.SlicesMinLength[string](1)                    // Minimum length
-validation.SlicesMaxLength[string](10)                   // Maximum length
-validation.SlicesLength[string](5)                       // Exact length
-validation.SlicesInBetweenLength[string](1, 10)         // Length range
-validation.SlicesUnique[string]()                       // All elements unique
-validation.SlicesContains[string]("required")           // Contains value
-validation.SlicesOneOf[string]("a", "b", "c")           // Elements must be one of specified values
-validation.SlicesNotOneOf[string]("x", "y")             // Elements must not be one of specified values
-validation.SlicesAtIndex(1, validation.NotZero[string]()) // Element at index 
-
-// Validate each element
-validation.SlicesForEach(
-    validation.NotZero[string](),
-    validation.StringsRuneMaxLength[string](50),
-)
-```
-
-### Map Validation
-
-```go
-// Map validation rules
-validation.MapsMinKeys[string, string](1)               // Minimum number of keys
-validation.MapsMaxKeys[string, string](10)              // Maximum number of keys
-validation.MapsLength[string, string](5)                // Exact number of keys
-validation.MapsLengthBetween[string, string](1, 10)     // Range of key count
-validation.MapsKey[string, string]("key",               // Validate specific key
-    validation.NotZero[string](),
-)
-validation.MapsKeysOneOf[string, string]("a", "b")      // Keys must be one of specified values
-validation.MapsKeysNotOneOf[string, string]("x")        // Keys must not be one of specified values
-validation.MapsValuesOneOf[string, string]("y", "z")    // Values must be one of specified values
-validation.MapsValuesNotOneOf[string, string]("bad")    // Values must not be one of specified values
-
-// Validate each key-value pair
-validation.MapsForEach(func(key, value string) *validation.Error {
-    if value == "" {
-        return &validation.Error{
-            Code:   "empty_value",
-            Params: map[string]any{"key": key},
-        }
-    }
-    return nil
-})
-```
-
-## Struct Validation
-
-### Basic Example
-
-```go
-type Person struct {
-    Name string
-    Age  int
-}
-
-validator := validation.Struct(
-    validation.Field("Name", 
-        func(p Person) string { return p.Name },
-        validation.NotZero[string](),
-        validation.StringsRuneMinLength[string](2),
-        validation.StringsRuneMaxLength[string](50),
-    ),
-    validation.Field("Age",
-        func(p Person) int { return p.Age },
-        validation.NumbersMin(0),
-        validation.NumbersMax(150),
-    ),
+	v "github.com/jacoelho/validation"
 )
 
-person := Person{Name: "John", Age: 30}
-errs := validator.Validate(person)
+type Validatable interface {
+	Validate() error
+}
+
+type Account struct {
+	Name string
+}
+
+var accountRule = v.NotBlank[string]().Field("name", func(a Account) string { return a.Name })
+
+func (a Account) Validate() error { return accountRule(a) }
+
+func main() {
+	var value Validatable = Account{}
+	fmt.Println(v.Format(value.Validate()))
+}
 ```
 
-### Nested Struct Validation
+```text
+$.name: not_blank
+```
+
+The interface belongs to the application. Validation runs when you call the rule or the method.
+
+## Model presence explicitly
+
+An absent value and a present zero value can mean different things. The generic `OptionalValue` and `RequiredValue` methods use the getter's boolean to make that distinction:
 
 ```go
-type Address struct {
-    Street string
-    City   string
-    ZIP    string
-}
+package main
 
-type User struct {
-    Name    string
-    Email   string
-    Address Address
-}
+import (
+	"fmt"
 
-// Create address validator
-addressValidator := validation.Struct(
-    validation.Field("Street", func(a Address) string { return a.Street },
-        validation.NotZero[string](),
-        validation.StringsRuneMinLength[string](5),
-    ),
-    validation.Field("City", func(a Address) string { return a.City },
-        validation.NotZero[string](),
-        validation.StringsRuneMinLength[string](2),
-    ),
-    validation.Field("ZIP", func(a Address) string { return a.ZIP },
-        validation.NotZero[string](),
-        validation.StringsMatchesRegex[string](`^\d{5}(-\d{4})?$`),
-    ),
+	v "github.com/jacoelho/validation"
 )
 
-// Create user validator with nested address
-userValidator := validation.Struct(
-    validation.Field("Name", func(u User) string { return u.Name },
-        validation.NotZero[string](),
-    ),
-    validation.Field("Email", func(u User) string { return u.Email },
-        validation.NotZero[string](),
-        validation.StringsMatchesRegex[string](`^[^@]+@[^@]+\.[^@]+$`),
-    ),
-    validation.StructField("Address", func(u User) Address { return u.Address },
-        addressValidator),
-)
-
-user := User{
-    Name:  "John Doe",
-    Email: "john@example.com",
-    Address: Address{
-        Street: "123 Main St",
-        City:   "Anytown",
-        ZIP:    "12345",
-    },
+type Patch struct {
+	Age    int
+	HasAge bool
 }
 
-errs := userValidator.Validate(user)
-if errs.HasErrors() {
-    for _, err := range errs {
-        fmt.Printf("Field: %s, Error: %s\n", err.Field, err.Code)
-        // Example output: "Field: Address.ZIP, Error: regex"
-    }
+func main() {
+	getAge := func(p Patch) (int, bool) { return p.Age, p.HasAge }
+	minimumAge := v.Min(18)
+	optionalAge := minimumAge.OptionalValue(getAge)
+	requiredAge := minimumAge.RequiredValue(getAge)
+
+	fmt.Println(optionalAge(Patch{}) == nil)
+	fmt.Println(v.Format(optionalAge(Patch{HasAge: true})))
+	fmt.Println(v.Format(requiredAge(Patch{})))
 }
 ```
 
-### Collection Fields
+```text
+true
+$: min
+$: required
+```
+
+For pointer fields, `OptionalPtr` skips a nil pointer and `RequiredPtr` reports `required` without calling its child. A failed guard does not prevent independent sibling rules from running. `AtIndex` and the map key rules similarly decide whether a child has an input. Ordinary zero, empty, and nil container values are passed to applicable rules; optionality comes from an explicit guard.
+
+## Validate map values
+
+Pass a key order to map rules so reported failures have a predictable order:
 
 ```go
-type User struct {
-    Name     string
-    Tags     []string
-    Settings map[string]string
-}
+package main
 
-validator := validation.Struct(
-    validation.Field("Name", func(u User) string { return u.Name },
-        validation.NotZero[string](),
-    ),
-    
-    // Slice validation
-    validation.SliceField("Tags", func(u User) []string { return u.Tags },
-        validation.SlicesMinLength[string](1),
-        validation.SlicesMaxLength[string](5),
-        validation.SlicesUnique[string](),
-        validation.SlicesForEach(
-            validation.NotZero[string](),
-            validation.StringsRuneMaxLength[string](20),
-        ),
-    ),
-    
-    // Map validation
-    validation.MapField("Settings", func(u User) map[string]string { return u.Settings },
-        validation.MapsMaxKeys[string, string](10),
-        validation.MapsForEach(func(k, v string) *validation.Error {
-            if v == "" {
-                return &validation.Error{
-                    Code:   "empty_setting_value",
-                    Params: map[string]any{"key": k},
-                }
-            }
-            return nil
-        }),
-    ),
+import (
+	"fmt"
+
+	v "github.com/jacoelho/validation"
 )
-```
 
-## Error Handling
-
-### Checking for Errors
-
-```go
-errs := validator.Validate(data)
-
-// Check if any errors exist
-if errs.HasErrors() {
-    // Handle validation errors
-}
-
-// Check for fatal errors (validation stopped early)
-if errs.HasFatalErrors() {
-    // Handle critical validation failures
+func main() {
+	minimum := v.MapValues[map[string]int](v.StringKeys[string](), v.Min(1))
+	err := minimum(map[string]int{"west": 0, "east": -1, "ok": 1})
+	fmt.Println(v.Format(err))
 }
 ```
 
-### Error Formatting
+```text
+$["east"]: min; $["west"]: min
+```
+
+Map callbacks run in Go's unspecified map iteration order. The map rule sorts only failing key groups before returning them. `MapEach` validates typed key/value entries; `MapKeys` and `MapValues` validate one side. `When` and `Unless` apply a predicate guard to a rule group. For custom constraints, use `Check(predicate, failure)` or an ordinary `Rule[T]`; `NewViolation(code, cause)` adds a code to a custom cause.
+
+Custom rules and failure factories must return literal `nil` on success. The library does not normalize typed-nil error interfaces or recover callback panics. Constructed rules can be shared across concurrent calls when their getters, predicates, comparators, failure factories, and captured state are safe for concurrent use; the library does not synchronize callbacks.
+
+## More constraints
+
+`Min` and `Max` include their bounds; `Between` includes both endpoints. `GreaterThan` and `LessThan` exclude their bounds. These rules accept integers and floats, including named types. String lengths are explicit: choose byte or rune rules.
 
 ```go
-// Default error formatting
-fmt.Println(errs.Error())
-// Output: "required (field: Name); min (field: Age) {actual: 15, min: 18}"
+package main
 
-// Custom formatting
-customFormat := errs.Format(func(e *validation.Error) string {
-    return fmt.Sprintf("%s: %s", e.Field, e.Code)
-}, "\n")
-fmt.Println(customFormat)
-// Output:
-// Name: required
-// Age: min
+import (
+	"fmt"
+	"regexp"
+	"time"
 
-// Individual error details
-for _, err := range errs {
-    fmt.Printf("Field: %s\n", err.Field)
-    fmt.Printf("Code: %s\n", err.Code)
-    fmt.Printf("Params: %v\n", err.Params)
-    fmt.Printf("Fatal: %t\n", err.Fatal)
+	v "github.com/jacoelho/validation"
+)
+
+func main() {
+	name := v.All(
+		v.NotBlank[string](),
+		v.Trimmed[string](),
+		v.Match[string](regexp.MustCompile(`^[A-Z][a-z]+$`)),
+	)
+	fmt.Println(v.Format(name(" Ada")))
+	fmt.Println(v.Format(v.All(v.Between(1, 20), v.MultipleOf(5))(12)))
+	fmt.Println(v.FloatMultipleOf(0.1, 1e-12)(0.3) == nil)
+	fmt.Println(v.Time[string](time.RFC3339)("2026-09-29T08:30:00Z") == nil)
 }
 ```
 
-## Custom Validation Rules
-
-### Simple Custom Rule
-
-```go
-func ValidateEmail() validation.Rule[string] {
-    return func(value string) *validation.Error {
-        if !strings.Contains(value, "@") || !strings.Contains(value, ".") {
-            return &validation.Error{
-                Code: "invalid_email",
-                Params: map[string]any{
-                    "value": value,
-                },
-            }
-        }
-        return nil
-    }
-}
-
-// Usage
-validation.Field("Email", func(u User) string { return u.Email },
-    ValidateEmail(),
-)
+```text
+$: trimmed; $: match
+$: multiple_of
+true
+true
 ```
 
-### Parameterized Custom Rule
+`NotBlank` rejects empty or whitespace-only strings; `Trimmed` rejects surrounding whitespace without modifying the value. `MultipleOf` uses exact integer division. `FloatMultipleOf` measures the absolute distance to the nearest multiple using a caller-supplied tolerance; NaN and infinities fail. `Match` uses a precompiled expression and matches substrings unless anchored. `Time(layout)` uses Go's `time.Parse`, so the layout can describe a date, time, or timestamp.
 
-```go
-func StringContainsAny(substrings ...string) validation.Rule[string] {
-    return func(value string) *validation.Error {
-        for _, substr := range substrings {
-            if strings.Contains(value, substr) {
-                return nil
-            }
-        }
-        return &validation.Error{
-            Code: "missing_required_substring",
-            Params: map[string]any{
-                "value":      value,
-                "substrings": substrings,
-            },
-        }
-    }
-}
+## Scope and cost
 
-// Usage
-validation.Field("Description", func(p Product) string { return p.Description },
-    StringContainsAny("premium", "deluxe", "pro"),
-)
+Rules use typed getters, constraints, comparators, and explicit projections. The library has no reflection, tag parser, format catalogue, network access, or context-bearing rule API.
+
+The successful-path allocation target is zero heap objects and zero heap bytes for preconstructed simple rules with prepared inputs and non-allocating callbacks. `Match` and `Time` may allocate during standard-library matching and parsing. Failure reporting may allocate. `SliceUnique` leaves its input untouched and scans previous elements, making up to `n(n−1)/2` comparisons.
+
+## Test
+
+```sh
+go test ./...
 ```
-
-## Advanced Usage
-
-### Conditional Validation
-
-```go
-type User struct {
-    Type       string
-    CreditCard string
-    BankAccount string
-}
-
-validator := validation.Struct(
-    validation.Field("Type", func(u User) string { return u.Type },
-        validation.OneOf[string]("basic", "premium"),
-    ),
-    
-    // Require credit card for premium users
-    validation.Field("CreditCard", func(u User) string { return u.CreditCard },
-        validation.When(
-            func(u User) bool { return u.Type == "premium" },
-            validation.NotZero[string](),
-        ),
-    ),
-    
-    // Bank account is optional for basic users, forbidden for premium
-    validation.Field("BankAccount", func(u User) string { return u.BankAccount },
-        validation.Unless(
-            func(u User) bool { return u.Type == "premium" },
-            validation.NotZero[string](),
-        ),
-    ),
-)
-```
-
-### Complex Logical Validation
-
-```go
-// Either email or phone must be provided
-validation.Field("ContactInfo", func(u User) User { return u },
-    validation.Or(
-        validation.Field("Email", func(u User) string { return u.Email },
-            validation.NotZero[string](),
-        ),
-        validation.Field("Phone", func(u User) string { return u.Phone },
-            validation.NotZero[string](),
-        ),
-    ),
-)
-```
-
-### Fatal Error Handling
-
-```go
-validation.Field("Password", func(u User) string { return u.Password },
-    // Stop validation if password is missing
-    validation.RuleStopOnError(validation.NotZero[string]()),
-    
-    // These rules only run if password is present
-    validation.StringsRuneMinLength[string](8),
-    validation.StringsMatchesRegex[string](`[A-Z]`), // Must contain uppercase
-    validation.StringsMatchesRegex[string](`[0-9]`), // Must contain number
-)
-```
-
-### Validation Groups
-
-```go
-// Create reusable validation groups
-var (
-    emailRules = []validation.Rule[string]{
-        validation.NotZero[string](),
-        validation.StringsMatchesRegex[string](`^[^@]+@[^@]+\.[^@]+$`),
-        validation.StringsRuneMaxLength[string](100),
-    }
-    
-    passwordRules = []validation.Rule[string]{
-        validation.NotZero[string](),
-        validation.StringsRuneMinLength[string](8),
-        validation.StringsMatchesRegex[string](`[A-Z]`),
-        validation.StringsMatchesRegex[string](`[a-z]`),
-        validation.StringsMatchesRegex[string](`[0-9]`),
-    }
-)
-
-userValidator := validation.Struct(
-    validation.Field("Email", func(u User) string { return u.Email }, emailRules...),
-    validation.Field("Password", func(u User) string { return u.Password }, passwordRules...),
-)
-```
-
-## License
-
-This project is licensed under the MIT License, see the LICENSE file for details.
-
-

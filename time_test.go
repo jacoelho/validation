@@ -1,362 +1,104 @@
 package validation_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/jacoelho/validation"
+	validation "github.com/jacoelho/validation"
 )
 
-func date(year, month, day int) time.Time {
-	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+func primitiveFixedTime(hour int) time.Time {
+	return time.Date(2026, time.September, 29, hour, 0, 0, 0, time.UTC)
 }
 
-func TestTimeBefore(t *testing.T) {
-	referenceTime := date(2023, 1, 2)
-	rule := validation.TimeBefore(referenceTime)
-
-	tests := []struct {
-		name    string
-		value   time.Time
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "time before reference should pass",
-			value:   date(2023, 1, 1),
-			wantErr: false,
-		},
-		{
-			name:    "time equal to reference should fail",
-			value:   date(2023, 1, 2),
-			wantErr: true,
-			errCode: "before",
-		},
-		{
-			name:    "time after reference should fail",
-			value:   date(2023, 1, 3),
-			wantErr: true,
-			errCode: "before",
-		},
+func TestTimeLayout(t *testing.T) {
+	type timestamp string
+	rfc3339 := validation.Time[timestamp](time.RFC3339)
+	for _, value := range []timestamp{"2026-09-29T08:30:00Z", "2026-09-29T09:30:00.123+01:00"} {
+		if err := rfc3339(value); err != nil {
+			t.Fatalf("%q should parse as RFC 3339: %v", value, err)
+		}
 	}
+	for _, value := range []timestamp{"", "2026-09-29", "2026-09-29T08:30:00", "2026-02-30T08:30:00Z"} {
+		requirePrimitiveCodes(t, rfc3339(value), validation.CodeTime)
+	}
+	if err := validation.Time[string]("2006-01-02")("2026-09-29"); err != nil {
+		t.Fatalf("date-only layout should parse: %v", err)
+	}
+	if err := validation.Time[string]("15:04")("08:30"); err != nil {
+		t.Fatalf("time-only layout should parse: %v", err)
+	}
+	requirePrimitiveCodes(t, validation.Time[string]("2006-01-02")("08:30"), validation.CodeTime)
+	defer func() {
+		if got, ok := recover().(*validation.ConfigurationError); !ok || got.Constructor() != "Time" {
+			t.Fatalf("empty layout panic = %#v", got)
+		}
+	}()
+	validation.Time[string]("")
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
+func TestTimeRelationsAtEqualInstant(t *testing.T) {
+	boundary := primitiveFixedTime(8)
+	value := time.Date(2026, time.September, 29, 9, 0, 0, 0, time.FixedZone("BST", 3600))
+	for _, test := range []struct {
+		name string
+		rule validation.Rule[time.Time]
+		want validation.Code
+	}{
+		{"before is strict", validation.TimeBefore(boundary), validation.CodeBefore},
+		{"before or equal includes boundary", validation.TimeBeforeOrEqual(boundary), ""},
+		{"after is strict", validation.TimeAfter(boundary), validation.CodeAfter},
+		{"after or equal includes boundary", validation.TimeAfterOrEqual(boundary), ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.rule(value)
+			if test.want == "" {
 				if err != nil {
-					t.Errorf("expected no error but got %v", err)
+					t.Fatalf("unexpected error: %v", err)
 				}
+				return
 			}
+			requirePrimitiveCodes(t, err, test.want)
 		})
 	}
 }
 
-func TestTimeBeforeOrEqual(t *testing.T) {
-	referenceTime := date(2023, 1, 2)
-	rule := validation.TimeBeforeOrEqual(referenceTime)
+func TestTimeBetweenAndNotZero(t *testing.T) {
+	min := primitiveFixedTime(8)
+	max := primitiveFixedTime(10)
+	rule := validation.TimeBetween(min, max)
+	for _, value := range []time.Time{min, primitiveFixedTime(9), max} {
+		if err := rule(value); err != nil {
+			t.Fatalf("inclusive boundary %v rejected: %v", value, err)
+		}
+	}
+	requirePrimitiveCodes(t, rule(primitiveFixedTime(7)), validation.CodeBetween)
+	requirePrimitiveCodes(t, rule(primitiveFixedTime(11)), validation.CodeBetween)
 
-	tests := []struct {
-		name    string
-		value   time.Time
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "time before reference should pass",
-			value:   date(2023, 1, 1),
-			wantErr: false,
-		},
-		{
-			name:    "time equal to reference should pass",
-			value:   date(2023, 1, 2),
-			wantErr: false,
-		},
-		{
-			name:    "time after reference should fail",
-			value:   date(2023, 1, 3),
-			wantErr: true,
-			errCode: "before",
-		},
+	var bounds *validation.BoundsError[time.Time]
+	if !errors.As(rule(primitiveFixedTime(11)), &bounds) {
+		t.Fatal("TimeBetween failure did not retain typed bounds")
+	}
+	lower, lowerInclusive, lowerPresent := bounds.Lower()
+	upper, upperInclusive, upperPresent := bounds.Upper()
+	if !lowerPresent || !upperPresent || !lowerInclusive || !upperInclusive || !lower.Equal(min) || !upper.Equal(max) {
+		t.Fatalf("bounds = (%v, %v, %v), (%v, %v, %v)", lower, lowerInclusive, lowerPresent, upper, upperInclusive, upperPresent)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
+	if err := validation.TimeNotZero()(time.Time{}); err == nil {
+		t.Fatal("zero time unexpectedly passed")
+	}
+	if err := validation.TimeNotZero()(primitiveFixedTime(9)); err != nil {
+		t.Fatalf("nonzero time rejected: %v", err)
 	}
 }
 
-func TestTimeAfter(t *testing.T) {
-	referenceTime := date(2023, 1, 2)
-	rule := validation.TimeAfter(referenceTime)
-
-	tests := []struct {
-		name    string
-		value   time.Time
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "time after reference should pass",
-			value:   date(2023, 1, 3),
-			wantErr: false,
-		},
-		{
-			name:    "time equal to reference should fail",
-			value:   date(2023, 1, 2),
-			wantErr: true,
-			errCode: "after",
-		},
-		{
-			name:    "time before reference should fail",
-			value:   date(2023, 1, 1),
-			wantErr: true,
-			errCode: "after",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestTimeAfterOrEqual(t *testing.T) {
-	referenceTime := date(2023, 1, 2)
-	rule := validation.TimeAfterOrEqual(referenceTime)
-
-	tests := []struct {
-		name    string
-		value   time.Time
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "time after reference should pass",
-			value:   date(2023, 1, 3),
-			wantErr: false,
-		},
-		{
-			name:    "time equal to reference should pass",
-			value:   date(2023, 1, 2),
-			wantErr: false,
-		},
-		{
-			name:    "time before reference should fail",
-			value:   date(2023, 1, 1),
-			wantErr: true,
-			errCode: "after",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestTimeBetween(t *testing.T) {
-	minTime := date(2023, 1, 1)
-	maxTime := date(2023, 1, 3)
-	rule := validation.TimeBetween(minTime, maxTime)
-
-	tests := []struct {
-		name    string
-		value   time.Time
-		wantErr bool
-		errCode string
-	}{
-		{
-			name:    "time within range should pass",
-			value:   date(2023, 1, 2),
-			wantErr: false,
-		},
-		{
-			name:    "time equal to minimum should pass",
-			value:   date(2023, 1, 1),
-			wantErr: false,
-		},
-		{
-			name:    "time equal to maximum should pass",
-			value:   date(2023, 1, 3),
-			wantErr: false,
-		},
-		{
-			name:    "time before minimum should fail",
-			value:   date(2022, 12, 31),
-			wantErr: true,
-			errCode: "between",
-		},
-		{
-			name:    "time after maximum should fail",
-			value:   date(2023, 1, 4),
-			wantErr: true,
-			errCode: "between",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := rule(tt.value)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				} else if err.Code != tt.errCode {
-					t.Errorf("expected error code %q, got %q", tt.errCode, err.Code)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("expected no error but got %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestTimeErrorParams(t *testing.T) {
-	referenceTime := date(2023, 1, 2)
-
-	t.Run("TimeBefore error params", func(t *testing.T) {
-		rule := validation.TimeBefore(referenceTime)
-		err := rule(date(2023, 1, 3))
-
-		if err == nil {
-			t.Fatal("expected error but got nil")
+func TestTimeRangeConfigurationPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected configuration panic")
 		}
-
-		if err.Code != "before" {
-			t.Errorf("expected code 'before', got %q", err.Code)
-		}
-
-		if err.Params["value"] != referenceTime {
-			t.Errorf("expected value param to be %v, got %v", referenceTime, err.Params["value"])
-		}
-	})
-
-	t.Run("TimeAfter error params", func(t *testing.T) {
-		rule := validation.TimeAfter(referenceTime)
-		err := rule(date(2023, 1, 1))
-
-		if err == nil {
-			t.Fatal("expected error but got nil")
-		}
-
-		if err.Code != "after" {
-			t.Errorf("expected code 'after', got %q", err.Code)
-		}
-
-		if err.Params["value"] != referenceTime {
-			t.Errorf("expected value param to be %v, got %v", referenceTime, err.Params["value"])
-		}
-	})
-
-	t.Run("TimeBetween error params", func(t *testing.T) {
-		minTime := date(2023, 1, 1)
-		maxTime := date(2023, 1, 3)
-		rule := validation.TimeBetween(minTime, maxTime)
-		testTime := date(2023, 1, 5)
-		err := rule(testTime)
-
-		if err == nil {
-			t.Fatal("expected error but got nil")
-		}
-
-		if err.Code != "between" {
-			t.Errorf("expected code 'between', got %q", err.Code)
-		}
-
-		if err.Params["min"] != minTime {
-			t.Errorf("expected min param to be %v, got %v", minTime, err.Params["min"])
-		}
-
-		if err.Params["max"] != maxTime {
-			t.Errorf("expected max param to be %v, got %v", maxTime, err.Params["max"])
-		}
-
-		if err.Params["value"] != testTime {
-			t.Errorf("expected value param to be %v, got %v", testTime, err.Params["value"])
-		}
-	})
-}
-
-func TestTimeEdgeCases(t *testing.T) {
-	t.Run("zero time validation", func(t *testing.T) {
-		var zeroTime time.Time
-		futureTime := time.Now().Add(24 * time.Hour)
-
-		rule := validation.TimeBefore(futureTime)
-		err := rule(zeroTime)
-
-		if err != nil {
-			t.Errorf("expected zero time to pass before future time, got error: %v", err)
-		}
-	})
-
-	t.Run("same time validation", func(t *testing.T) {
-		sameTime := time.Now()
-
-		beforeRule := validation.TimeBefore(sameTime)
-		if beforeRule(sameTime) == nil {
-			t.Error("expected TimeBefore to fail for same time")
-		}
-
-		afterRule := validation.TimeAfter(sameTime)
-		if afterRule(sameTime) == nil {
-			t.Error("expected TimeAfter to fail for same time")
-		}
-	})
-
-	t.Run("microsecond precision", func(t *testing.T) {
-		baseTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
-		microsecondLater := baseTime.Add(time.Microsecond)
-
-		rule := validation.TimeBefore(baseTime)
-		err := rule(microsecondLater)
-
-		if err == nil {
-			t.Error("expected microsecond later time to fail TimeBefore")
-		}
-	})
+	}()
+	validation.TimeBetween(primitiveFixedTime(10), primitiveFixedTime(8))
 }
