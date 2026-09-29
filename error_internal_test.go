@@ -17,14 +17,14 @@ func TestWalkIssuesEarlyStopAndReplay(t *testing.T) {
 	calls := 0
 	root := combine([]error{NewViolation("first", nil), countedUnwrap{&calls, errors.New("last")}})
 	seen := 0
-	for range walkIssues(root) {
+	for range WalkIssues(root) {
 		seen++
 		break
 	}
 	if seen != 1 || calls != 0 {
 		t.Fatalf("early stop seen=%d later unwrap calls=%d", seen, calls)
 	}
-	for range walkIssues(root) {
+	for range WalkIssues(root) {
 		seen++
 	}
 	if seen != 3 || calls != 1 {
@@ -40,7 +40,7 @@ func TestWalkIssuesMixedTreeAndNil(t *testing.T) {
 	root := at(Segment{Kind: FieldSegment, Name: "outer"},
 		combine([]error{coded, errors.Join(first, second)}))
 	var got []Issue
-	for issue := range walkIssues(root) {
+	for issue := range WalkIssues(root) {
 		got = append(got, issue)
 	}
 	if len(got) != 3 {
@@ -53,7 +53,7 @@ func TestWalkIssuesMixedTreeAndNil(t *testing.T) {
 			t.Fatalf("issue %d = %+v, want code %q, error %v at $.outer", i, issue, wantCodes[i], wantErrors[i])
 		}
 	}
-	for range walkIssues(nil) {
+	for range WalkIssues(nil) {
 		t.Fatal("nil error yielded an issue")
 	}
 }
@@ -66,7 +66,7 @@ func (panicUnwrap) Unwrap() error { panic("later sibling inspected") }
 func TestWalkIssuesStopBeforePanickingSibling(t *testing.T) {
 	root := combine([]error{NewViolation("first", nil), panicUnwrap{}})
 	seen := 0
-	for range walkIssues(root) {
+	for range WalkIssues(root) {
 		seen++
 		break
 	}
@@ -82,7 +82,7 @@ func TestWalkIssuesRetainedPathsAndRepeatedIdentity(t *testing.T) {
 		at(Segment{Kind: FieldSegment, Name: "right"}, shared),
 		at(Segment{Kind: FieldSegment, Name: "third"}, shared),
 	})
-	walk := walkIssues(root)
+	walk := WalkIssues(root)
 	var first []Issue
 	for issue := range walk {
 		first = append(first, issue)

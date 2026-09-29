@@ -1,18 +1,16 @@
 # Validation
 
-Validation is a Go library for building structural validation rules with minimal overhead. A `Rule[T]` is `func(T) error`: it returns `nil` or all applicable failures. Requires Go 1.27+.
+Validation builds typed rules for Go values. To validate a struct, project rules onto its fields with typed getters; the library uses no reflection or tags. A `Rule[T]` is `func(T) error`: `nil` means validation succeeded. `Struct` and `All` run every applicable child rule and return their failures. Requires Go 1.27 or later.
 
-## Install
+## Install from main
 
 ```sh
-go get github.com/jacoelho/validation
+go get github.com/jacoelho/validation@main
 ```
-
-These examples describe the pending Go 1.27 refactor. Published v1.0.x tags still contain the previous API.
 
 ## Validate a struct
 
-Combine field rules and call the result with a struct:
+Define the field rules once, then call the combined rule for each `User`:
 
 ```go
 package main
@@ -36,7 +34,7 @@ var userRule = v.Struct(
 
 func formatLines(err error) string {
 	var lines []string
-	for _, issue := range v.Issues(err) {
+	for issue := range v.WalkIssues(err) {
 		lines = append(lines, fmt.Sprintf("%s at %s", issue.Code, v.FormatPath(issue.Path)))
 	}
 	return strings.Join(lines, "\n")
@@ -55,13 +53,15 @@ not_blank at $.name
 min at $.age
 ```
 
-`Field` reads a struct field and labels its failures. `Struct` runs every field rule in order. Use `All` to combine rules for one value and `Each` to validate slice elements. `Project(getter)` adapts a rule without adding a path segment. The function forms of `Field` and `Project` accept multiple child rules.
+`NotBlank` rejects the whitespace-only name; `Min(18)` rejects age 16. `Field` adds each field name to the error path. `Struct` runs both rules, so both failures appear.
 
-For custom output, `Issues(err)` returns each failure's `Path`, `Code`, and terminal `Err` in order. `FormatPath` renders a path; `Format(err)` produces the default `path: code` text. Use `errors.Is` or `errors.As` to inspect the error tree; detail types include `LengthError`, `BoundsError[T]`, `DuplicateError`, and `IndexError`.
+`Project` adapts a rule to a parent type without adding a path segment.
+
+`Format` prints paths and codes without rejected values or cause messages. The `formatLines` function shows another representation: `WalkIssues` yields each failure in rule order. `Issues(err)` collects the same failures into an owned slice. Each issue has a `Path []Segment`, a `Code`, and an `Err` that may wrap a cause; `errors.Is` and `errors.As` inspect the returned error tree.
 
 ## Implement a validation interface
 
-If your application uses a `Validate() error` interface, delegate the method to a reusable rule:
+If your application expects a `Validate() error` method, have it call the rule:
 
 ```go
 package main
@@ -94,11 +94,11 @@ func main() {
 $.name: not_blank
 ```
 
-The interface belongs to the application. Validation runs when you call the rule or the method.
+The application owns this interface. Calling `Validate` runs the same rule; the library does not invoke the method automatically.
 
 ## Model presence explicitly
 
-An absent value and a present zero value can mean different things. The generic `OptionalValue` and `RequiredValue` methods use the getter's boolean to make that distinction:
+When absence and a present zero value mean different things, return `(value, present)` from the getter:
 
 ```go
 package main
@@ -132,11 +132,11 @@ $: min
 $: required
 ```
 
-For pointer fields, `OptionalPtr` skips a nil pointer and `RequiredPtr` reports `required` without calling its child. A failed guard does not prevent independent sibling rules from running. `AtIndex` and the map key rules similarly decide whether a child has an input. Ordinary zero, empty, and nil container values are passed to applicable rules; optionality comes from an explicit guard.
+`OptionalValue` skips an absent value. `RequiredValue` reports `required` for absence; when the value is present, both methods run `Min`, even when age is zero. For pointers, `OptionalPtr` skips nil; `RequiredPtr` reports `required` for nil without calling its child. `AtIndex` reports an out-of-range index without calling its child. None of these guards stops independent sibling rules.
 
-## Validate map values
+## Validate maps and slices
 
-Pass a key order to map rules so reported failures have a predictable order:
+`MapValues` takes a key order for its returned failures. Rule callbacks still follow Go's unspecified map iteration order:
 
 ```go
 package main
@@ -158,13 +158,11 @@ func main() {
 $["east"]: min; $["west"]: min
 ```
 
-Map callbacks run in Go's unspecified map iteration order. The map rule sorts only failing key groups before returning them. `MapEach` validates typed key/value entries; `MapKeys` and `MapValues` validate one side. `When` and `Unless` apply a predicate guard to a rule group. For custom constraints, use `Check(predicate, failure)` or an ordinary `Rule[T]`; `NewViolation(code, cause)` adds a code to a custom cause.
-
-Custom rules and failure factories must return literal `nil` on success. The library does not normalize typed-nil error interfaces or recover callback panics. Constructed rules can be shared across concurrent calls when their getters, predicates, comparators, failure factories, and captured state are safe for concurrent use; the library does not synchronize callbacks.
+Only failing key groups are sorted. `MapKeys` checks existing keys; `MapEach` checks typed key/value entries. To check one specified key, use `MapRequiredKey` to report absence or `MapOptionalKey` to validate it when present and skip it when absent. `Each` applies rules to slice elements, adding their indices to failure paths.
 
 ## More constraints
 
-`Min` and `Max` include their bounds; `Between` includes both endpoints. `GreaterThan` and `LessThan` exclude their bounds. These rules accept integers and floats, including named types. String lengths are explicit: choose byte or rune rules.
+`Min`, `Max`, and `Between` include their bounds. `GreaterThan` and `LessThan` do not. They accept integers and floats, including named types. For string lengths, choose byte or rune rules explicitly.
 
 ```go
 package main
@@ -197,13 +195,23 @@ true
 true
 ```
 
-`NotBlank` rejects empty or whitespace-only strings; `Trimmed` rejects surrounding whitespace without modifying the value. `MultipleOf` uses exact integer division. `FloatMultipleOf` measures the absolute distance to the nearest multiple using a caller-supplied tolerance; NaN and infinities fail. `Match` uses a precompiled expression and matches substrings unless anchored. `Time(layout)` uses Go's `time.Parse`, so the layout can describe a date, time, or timestamp.
+`All` runs every name rule: the value is not blank, but it has leading whitespace and does not match the expression. `Trimmed` reports surrounding whitespace without changing the input. `Match` accepts a compiled regexp and searches for a substring unless you anchor it.
 
-## Scope and cost
+`MultipleOf` requires a zero integer remainder for a nonzero base. `FloatMultipleOf` checks distance to the nearest multiple against an absolute tolerance; NaN and infinities fail. `Time(layout)` uses `time.Parse`, so the layout can describe a date, time, or timestamp.
 
-Rules use typed getters, constraints, comparators, and explicit projections. The library has no reflection, tag parser, format catalogue, network access, or context-bearing rule API.
+## Custom rules
 
-The successful-path allocation target is zero heap objects and zero heap bytes for preconstructed simple rules with prepared inputs and non-allocating callbacks. `Match` and `Time` may allocate during standard-library matching and parsing. Failure reporting may allocate. `SliceUnique` leaves its input untouched and scans previous elements, making up to `n(n−1)/2` comparisons.
+`Check(predicate, failure)` makes a rule whose failure factory runs only when the predicate fails. `When` and `Unless` apply a rule group under a condition. For a custom failure, `NewViolation(code, cause)` attaches a machine-readable code to an error.
+
+A custom `Rule[T]` must return a nil error interface on success; a typed nil stored in an `error` interface is non-nil. A `Check` failure factory must return a non-nil error when called. Callback panics propagate.
+
+You can share a constructed rule across goroutines when its getters, predicates, comparators, failure factories, and captured state are safe for concurrent use; the library does not synchronize them. The library itself performs no network I/O, but custom callbacks can. `Rule[T]` has no context parameter.
+
+## Cost
+
+The allocation tests assert zero allocations per run for selected preconstructed rules with prepared inputs and non-allocating callbacks. `Match` and `Time` may allocate during standard-library matching and parsing; failure reporting may allocate too.
+
+`SliceUnique` leaves its input unchanged and compares each element with earlier ones, making at most `n(n−1)/2` comparisons.
 
 ## Test
 

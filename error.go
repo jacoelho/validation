@@ -238,13 +238,15 @@ func appendFailure(children []error, err error) []error {
 // Issues returns one independent, owned path snapshot per failure occurrence.
 func Issues(err error) []Issue {
 	var out []Issue
-	for issue := range walkIssues(err) {
+	for issue := range WalkIssues(err) {
 		out = append(out, issue)
 	}
 	return out
 }
 
-func walkIssues(err error) iter.Seq[Issue] {
+// WalkIssues yields failures in rule order. Each traversal owns its paths and
+// stops before visiting later errors when the caller breaks from the loop.
+func WalkIssues(err error) iter.Seq[Issue] {
 	return func(yield func(Issue) bool) {
 		walkIssueNode(err, nil, yield)
 	}
@@ -338,7 +340,7 @@ func identifier(name string) bool {
 // Format presents paths and codes without invoking external Error methods.
 func Format(err error) string {
 	var b strings.Builder
-	for issue := range walkIssues(err) {
+	for issue := range WalkIssues(err) {
 		if b.Len() > 0 {
 			b.WriteString("; ")
 		}
