@@ -85,6 +85,54 @@ func TestCustomErrorParameters(t *testing.T) {
 	}
 }
 
+type customMessageError struct {
+	code    v.Code
+	message string
+}
+
+func (e customMessageError) Error() string   { panic("custom Error must not be called") }
+func (e customMessageError) Code() v.Code    { return e.code }
+func (e customMessageError) Message() string { return e.message }
+
+var _ v.MessageProvider = customMessageError{}
+
+type uncodedMessageError struct{}
+
+func (uncodedMessageError) Error() string   { panic("external Error must not be called") }
+func (uncodedMessageError) Message() string { panic("uncoded Message must not be called") }
+
+func TestCustomDefaultMessages(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"custom message", customMessageError{"quota", "upload limit reached"}, "upload limit reached"},
+		{"known code override", customMessageError{v.CodeRequired, "choose an account"}, "choose an account"},
+		{"known code empty message", customMessageError{v.CodeRequired, ""}, "value is required"},
+		{"unknown code empty message", customMessageError{"quota", ""}, "quota"},
+		{"whitespace message", customMessageError{"quota", " \t "}, " \t "},
+		{"uncoded message", uncodedMessageError{}, "external"},
+		{"coded cause message", v.NewViolation("outer", customMessageError{"quota", "private cause message"}), "outer"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule := v.Field("uploads", func(count int) int { return count }, v.Rule[int](func(int) error { return tt.err }))
+			err := rule(4)
+			issues := v.Issues(err)
+			if len(issues) != 1 {
+				t.Fatalf("issue count = %d, want 1", len(issues))
+			}
+			if got := v.DefaultMessage(issues[0]); got != tt.want {
+				t.Errorf("DefaultMessage = %q, want %q", got, tt.want)
+			}
+			if got, want := v.Format(err), "$.uploads: "+tt.want; got != want {
+				t.Errorf("Format = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestParameterSnapshots(t *testing.T) {
 	cases := []struct {
 		err  error

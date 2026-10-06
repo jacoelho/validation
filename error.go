@@ -66,6 +66,14 @@ type Coded interface {
 	Code() Code
 }
 
+// MessageProvider supplies a default display message for a coded failure.
+// Message returns text without a path prefix; an empty string requests the
+// code-based fallback. It must not call Format or DefaultMessage for the same error.
+type MessageProvider interface {
+	Coded
+	Message() string
+}
+
 // Parameterized exposes named message parameters for built-in or custom errors.
 // Parameters returns nil when there are no parameters, otherwise a fresh map.
 // Values retain their original types;
@@ -372,7 +380,7 @@ func identifier(name string) bool {
 	return true
 }
 
-// Format presents paths and default English failure reasons.
+// Format presents paths and default failure messages.
 func Format(err error) string {
 	var b strings.Builder
 	for issue := range WalkIssues(err) {

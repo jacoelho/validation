@@ -34,3 +34,20 @@ func ExampleParameterized() {
 	}
 	// Output: $.bar: deve ser pelo menos 2
 }
+
+type uploadQuotaError struct{ limit int }
+
+func (e uploadQuotaError) Error() string { return e.Message() }
+func (e uploadQuotaError) Code() v.Code  { return "upload_quota" }
+func (e uploadQuotaError) Message() string {
+	return fmt.Sprintf("upload quota exceeded (limit %d)", e.limit)
+}
+
+func ExampleMessageProvider() {
+	rule := v.Check(
+		func(count int) bool { return count <= 3 },
+		func(int) error { return uploadQuotaError{limit: 3} },
+	).Field("uploads", func(count int) int { return count })
+	fmt.Println(v.Format(rule(4)))
+	// Output: $.uploads: upload quota exceeded (limit 3)
+}
