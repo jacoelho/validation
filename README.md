@@ -63,7 +63,7 @@ min at $.age
 
 ## Read validation errors
 
-`Format(err)` prints each failure with its path and an English message. The library's error types use the same formatting in their `Error` methods. Messages include configured bounds, lengths, patterns, and multiples. They omit rejected values and cause messages, though length failures include the actual length. Unknown custom codes and external failures use their code as the message.
+`Format(err)` prints each failure with its path and a default message. The library's error types use the same formatting in their `Error` methods. Built-in messages include configured bounds, lengths, patterns, and multiples. They omit rejected values and cause messages, though length failures include the actual length. Custom coded errors can supply their own messages through `MessageProvider`. Other unknown codes and external failures use their code as the message.
 
 For individual failures, use `WalkIssues(err)`, as in `formatLines` above. It yields issues in rule order. `Issues(err)` collects them into a slice owned by the caller. Each issue has three fields:
 
@@ -74,6 +74,19 @@ For individual failures, use `WalkIssues(err)`, as in `formatLines` above. It yi
 Use `errors.Is` and `errors.As` to inspect the returned error tree. Paths are stored on issues, so the same error can appear at more than one location.
 
 ## Custom messages and localisation
+
+For a custom default message, implement `MessageProvider`:
+
+```go
+type MessageProvider interface {
+    Coded
+    Message() string
+}
+```
+
+`Message()` returns text intended for display, without a path prefix. A nonempty message takes precedence over the built-in message for the code; an empty string uses the normal code-based fallback. The formatter reads only the current coded failure, without searching its causes. Ordinary errors with only a `Message()` method remain `external`.
+
+`Message()` must not call `Format` or `DefaultMessage` for the same error, because that would recurse. Implement the custom error's own `Error()` method too, as in the example below.
 
 To translate a message, read the failure code and its parameters. Built-in errors provide these through `Parameterized`; custom errors can implement it too:
 
@@ -101,7 +114,7 @@ for issue := range v.WalkIssues(failure) {
 // $.bar: deve ser pelo menos 2
 ```
 
-`DefaultMessage(issue)` supplies the built-in English message without a path. Use it as a fallback for codes you do not translate. The library stores no locale and requires no particular template syntax or formatter interface.
+`DefaultMessage(issue)` supplies the custom default message or built-in English fallback without a path. Use it as a fallback for codes you do not translate. The library stores no locale and requires no particular template syntax or formatter interface.
 
 | Error type | Named parameters |
 | --- | --- |
@@ -115,19 +128,31 @@ for issue := range v.WalkIssues(failure) {
 
 Byte text constraints preserve their exact bytes in a string. Length units are the stable `LengthUnit` values `bytes`, `runes`, `elements`, and `entries`. Translate these labels in your application.
 
-A custom error can supply any number of named parameters:
+A custom error can supply a default message and named parameters:
 
 ```go
 type QuotaError struct { Limit int }
 
-func (e QuotaError) Error() string { return "upload quota exceeded" }
+func (e QuotaError) Error() string { return e.Message() }
 func (e QuotaError) Code() v.Code { return "upload_quota" }
+func (e QuotaError) Message() string {
+    return fmt.Sprintf("upload quota exceeded (limit %d)", e.Limit)
+}
 func (e QuotaError) Parameters() map[string]any {
     return map[string]any{"limit": e.Limit}
 }
 ```
 
 Return it from a `Rule[T]` or `Check` failure factory. `WalkIssues` keeps the original error in `issue.Err`, so its code and parameters remain available. Errors do not have to implement `Parameterized`: an error with only `Code()` keeps its code, and an ordinary error is reported with code `external`.
+
+```go
+rule := v.Check(
+    func(count int) bool { return count <= 3 },
+    func(int) error { return QuotaError{Limit: 3} },
+).Field("uploads", func(count int) int { return count })
+fmt.Println(v.Format(rule(4)))
+// $.uploads: upload quota exceeded (limit 3)
+```
 
 ## Implement a validation interface
 

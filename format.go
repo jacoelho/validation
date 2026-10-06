@@ -6,11 +6,14 @@ import (
 	"strings"
 )
 
-// DefaultMessage returns the built-in English message without a path prefix.
+// DefaultMessage returns a default failure message without a path prefix.
+// It uses a nonempty MessageProvider message or the built-in English code fallback.
 // Custom formatters can use it as a fallback without formatting the error tree again.
 func DefaultMessage(issue Issue) string {
-	if detail, ok := issue.Err.(interface{ failureMessage() string }); ok {
-		return detail.failureMessage()
+	if detail, ok := issue.Err.(MessageProvider); ok { //nolint:errorlint // Only the current coded failure may supply its message.
+		if message := detail.Message(); message != "" {
+			return message
+		}
 	}
 	switch issue.Code {
 	case CodeRequired:
@@ -76,7 +79,7 @@ func DefaultMessage(issue Issue) string {
 	}
 }
 
-func (e *BoundsError[T]) failureMessage() string {
+func (e *BoundsError[T]) Message() string {
 	if e.hasLower && e.hasUpper {
 		return fmt.Sprintf("must be between %v and %v (inclusive)", e.lower.value, e.upper.value)
 	}
@@ -107,7 +110,7 @@ func (e *BoundsError[T]) failureMessage() string {
 	return string(e.code)
 }
 
-func (e *LengthError) failureMessage() string {
+func (e *LengthError) Message() string {
 	if !e.hasMaximum {
 		return fmt.Sprintf("length must be at least %d %s (got %d)", e.minimum, lengthUnit(e.unit, e.minimum), e.actual)
 	}
@@ -120,11 +123,11 @@ func (e *LengthError) failureMessage() string {
 	return fmt.Sprintf("length must be between %d and %d %s (got %d)", e.minimum, e.maximum, lengthUnit(e.unit, e.maximum), e.actual)
 }
 
-func (e *DuplicateError) failureMessage() string {
+func (e *DuplicateError) Message() string {
 	return fmt.Sprintf("duplicates element at index %d", e.first)
 }
 
-func (e *IndexError) failureMessage() string {
+func (e *IndexError) Message() string {
 	return fmt.Sprintf("index %d is out of range for length %d", e.index, e.length)
 }
 
@@ -138,7 +141,7 @@ func lengthUnit(unit LengthUnit, count int) string {
 	return string(unit)
 }
 
-func (e *TextError) failureMessage() string {
+func (e *TextError) Message() string {
 	constraint := strconv.Quote(e.constraint)
 	switch e.code {
 	case CodeContains:
@@ -156,7 +159,7 @@ func (e *TextError) failureMessage() string {
 	}
 }
 
-func (e *MultipleOfError[T]) failureMessage() string {
+func (e *MultipleOfError[T]) Message() string {
 	if e.hasTolerance {
 		return fmt.Sprintf("must be a finite multiple of %v within tolerance %v", e.base, e.tolerance)
 	}
