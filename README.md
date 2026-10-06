@@ -1,8 +1,12 @@
 # Validation
 
-Validation builds typed rules for Go values. To validate a struct, project rules onto its fields with typed getters; the library uses no reflection or tags. A `Rule[T]` is `func(T) error`: `nil` means validation succeeded. `Struct` and `All` run every applicable child rule and return their failures. Requires Go 1.27 or later.
+Validation is a Go library for validating values with typed rules. Struct fields are read through getter functions, without reflection or struct tags.
+
+A `Rule[T]` is a `func(T) error`. Call it with a value; it returns `nil` on success.
 
 ## Install from main
+
+Requires Go 1.27 or later.
 
 ```sh
 go get github.com/jacoelho/validation@main
@@ -53,15 +57,25 @@ not_blank at $.name
 min at $.age
 ```
 
-`NotBlank` rejects the whitespace-only name; `Min(18)` rejects age 16. `Field` adds each field name to the error path. `Struct` runs both rules, so both failures appear.
+`Field` adds the field name to the error path. Use `Project` instead when you need a getter without a path segment.
 
-`Project` adapts a rule to a parent type without adding a path segment.
+`Struct` and `All` run every child rule and collect their failures. Neither stops at the first failure.
 
-`Format` and the returned error’s `Error` method print paths and readable failure reasons, including configured bounds, lengths, patterns, and multiples. Rejected values and cause messages are omitted; length failures include the actual length. Unknown custom codes and external failures retain their code as the message. Machine-readable codes remain available through `WalkIssues` and `Issues`. The `formatLines` function shows another representation: `WalkIssues` yields each failure in rule order. `Issues(err)` collects the same failures into an owned slice. Each issue has a `Path []Segment`, a `Code`, and an `Err` that may wrap a cause; `errors.Is` and `errors.As` inspect the returned error tree.
+## Read validation errors
+
+`Format(err)` prints each failure with its path and an English message. The library's error types use the same formatting in their `Error` methods. Messages include configured bounds, lengths, patterns, and multiples. They omit rejected values and cause messages, though length failures include the actual length. Unknown custom codes and external failures use their code as the message.
+
+For individual failures, use `WalkIssues(err)`, as in `formatLines` above. It yields issues in rule order. `Issues(err)` collects them into a slice owned by the caller. Each issue has three fields:
+
+- `Path []Segment`: the location of the failure.
+- `Code`: the machine-readable failure code.
+- `Err`: the error, which may wrap a cause.
+
+Use `errors.Is` and `errors.As` to inspect the returned error tree. Paths are stored on issues, so the same error can appear at more than one location.
 
 ## Custom messages and localisation
 
-Errors own failure codes and parameters; applications own localisation and presentation. `Parameterized` is the optional shared contract for built-in and custom errors:
+To translate a message, read the failure code and its parameters. Built-in errors provide these through `Parameterized`; custom errors can implement it too:
 
 ```go
 type Parameterized interface {
@@ -71,7 +85,7 @@ type Parameterized interface {
 }
 ```
 
-`Parameters()` returns nil for no parameters, otherwise a fresh map. Values retain their original types and precision. Referenced values must be immutable or defensively copied by the error owner. Typed accessors remain available; parameter maps are derived from the same fields.
+`Parameters()` returns a fresh map, or nil when there are no parameters. Values keep their original types and precision. If you implement this method, keep referenced data immutable or copy it before returning it. Built-in errors also have typed accessors that read the same fields.
 
 Use `WalkIssues` to format failures with your own code or localisation library:
 
@@ -87,7 +101,7 @@ for issue := range v.WalkIssues(failure) {
 // $.bar: deve ser pelo menos 2
 ```
 
-`Format` remains the built-in English formatter. `DefaultMessage(issue)` returns its message without a path, for optional fallback. Paths belong to issues, so one error can appear at multiple locations. The library stores no locale and imposes no template syntax or formatter interface.
+`DefaultMessage(issue)` supplies the built-in English message without a path. Use it as a fallback for codes you do not translate. The library stores no locale and requires no particular template syntax or formatter interface.
 
 | Error type | Named parameters |
 | --- | --- |
@@ -99,7 +113,7 @@ for issue := range v.WalkIssues(failure) {
 | `IndexError` | `index`, `length` |
 | `Violation` | None |
 
-Byte text constraints preserve their exact bytes in a string. Length units are stable `LengthUnit` values for the application to translate.
+Byte text constraints preserve their exact bytes in a string. Length units are the stable `LengthUnit` values `bytes`, `runes`, `elements`, and `entries`. Translate these labels in your application.
 
 A custom error can supply any number of named parameters:
 
@@ -113,7 +127,7 @@ func (e QuotaError) Parameters() map[string]any {
 }
 ```
 
-Return it from a `Rule[T]` or `Check` failure factory. `WalkIssues` preserves the code, parameters, and error identity; ordinary errors and coded errors without parameters still work. The default formatter prints unknown custom codes and omits cause messages.
+Return it from a `Rule[T]` or `Check` failure factory. `WalkIssues` keeps the original error in `issue.Err`, so its code and parameters remain available. Errors do not have to implement `Parameterized`: an error with only `Code()` keeps its code, and an ordinary error is reported with code `external`.
 
 ## Implement a validation interface
 
@@ -150,9 +164,9 @@ func main() {
 $.name: must not be blank
 ```
 
-The application owns this interface. Calling `Validate` runs the same rule; the library does not invoke the method automatically.
+Define this interface in your application. The library does not call `Validate` automatically.
 
-## Model presence explicitly
+## Optional and required values
 
 When absence and a present zero value mean different things, return `(value, present)` from the getter:
 
@@ -188,11 +202,13 @@ $: must be at least 18
 $: value is required
 ```
 
-`OptionalValue` skips an absent value. `RequiredValue` reports `required` for absence; when the value is present, both methods run `Min`, even when age is zero. For pointers, `OptionalPtr` skips nil; `RequiredPtr` reports `required` for nil without calling its child. `AtIndex` reports an out-of-range index without calling its child. None of these guards stops independent sibling rules.
+Both methods validate a present value, including zero. For an absent value, `OptionalValue` skips validation and `RequiredValue` reports `required`.
+
+For pointers, use `OptionalPtr` to skip nil or `RequiredPtr` to report `required`. Neither calls its child rule for nil. These guards do not stop independent sibling rules.
 
 ## Validate maps and slices
 
-`MapValues` takes a key order for its returned failures. Rule callbacks still follow Go's unspecified map iteration order:
+`MapValues` returns failures in the key order you provide. It calls rules in Go's unspecified map iteration order:
 
 ```go
 package main
@@ -214,11 +230,17 @@ func main() {
 $["east"]: must be at least 1; $["west"]: must be at least 1
 ```
 
-Only failing key groups are sorted. `MapKeys` checks existing keys; `MapEach` checks typed key/value entries. To check one specified key, use `MapRequiredKey` to report absence or `MapOptionalKey` to validate it when present and skip it when absent. `Each` applies rules to slice elements, adding their indices to failure paths.
+Only failing key groups are sorted. Use `MapKeys` to check existing keys, or `MapEach` to check typed key/value entries.
 
-## More constraints
+For one specified key, `MapRequiredKey` reports absence. `MapOptionalKey` validates the value when present and skips it when absent.
 
-`Min`, `Max`, and `Between` include their bounds. `GreaterThan` and `LessThan` do not. They accept integers and floats, including named types. For string lengths, choose byte or rune rules explicitly.
+`Each` validates slice elements and adds their indices to failure paths. `AtIndex` checks one index. If the index is out of range, it reports a failure without calling its child rule; independent sibling rules still run.
+
+`SliceUnique` leaves its input unchanged and compares each element with earlier ones, making at most `n(n−1)/2` comparisons.
+
+## Combine rules
+
+Use `All` to apply several constraints to the same value:
 
 ```go
 package main
@@ -251,23 +273,35 @@ true
 true
 ```
 
-`All` runs every name rule: the value is not blank, but it has leading whitespace and does not match the expression. `Trimmed` reports surrounding whitespace without changing the input. `Match` accepts a compiled regexp and searches for a substring unless you anchor it.
+`When` runs a group of rules when its predicate is true. `Unless` runs the group when its predicate is false.
 
-`MultipleOf` requires a zero integer remainder for a nonzero base. `FloatMultipleOf` checks distance to the nearest multiple against an absolute tolerance; NaN and infinities fail. `Time(layout)` uses `time.Parse`, so the layout can describe a date, time, or timestamp.
+### Numbers
+
+`Min`, `Max`, and `Between` include their bounds. `GreaterThan` and `LessThan` exclude them. These rules accept integers and floats, including named types.
+
+`MultipleOf` requires a zero integer remainder for a nonzero base. `FloatMultipleOf` checks distance to the nearest multiple against an absolute tolerance. NaN and infinities fail.
+
+### Text and time
+
+`Trimmed` reports surrounding whitespace without changing the input. `Match` accepts a compiled regexp and searches for a substring unless you anchor it. For string lengths, choose byte or rune rules explicitly.
+
+`Time(layout)` uses `time.Parse`, so the layout can describe a date, time, or timestamp.
 
 ## Custom rules
 
-`Check(predicate, failure)` makes a rule whose failure factory runs only when the predicate fails. `When` and `Unless` apply a rule group under a condition. For a custom failure, `NewViolation(code, cause)` attaches a machine-readable code to an error.
+`Check(predicate, failure)` calls the failure factory only when the predicate fails. To attach a machine-readable code to an error, use `NewViolation(code, cause)`.
 
-A custom `Rule[T]` must return a nil error interface on success; a typed nil stored in an `error` interface is non-nil. A `Check` failure factory must return a non-nil error when called. Callback panics propagate.
+A custom `Rule[T]` must return a nil error interface on success. A typed nil stored in an `error` interface is non-nil. A `Check` failure factory must return a non-nil error when called. Callback panics propagate.
 
-You can share a constructed rule across goroutines when its getters, predicates, comparators, failure factories, and captured state are safe for concurrent use; the library does not synchronize them. The library itself performs no network I/O, but custom callbacks can. `Rule[T]` has no context parameter.
+## Share rules across goroutines
 
-## Cost
+A constructed rule can be shared across goroutines if its getters, predicates, comparators, failure factories, and captured state are safe for concurrent use. The library does not synchronize them.
 
-The allocation tests assert zero allocations per run for selected preconstructed rules with prepared inputs and non-allocating callbacks. `Match` and `Time` may allocate during standard-library matching and parsing; failure reporting may allocate too.
+The library performs no network I/O. If your callbacks do I/O, handle cancellation there: `Rule[T]` has no context parameter.
 
-`SliceUnique` leaves its input unchanged and compares each element with earlier ones, making at most `n(n−1)/2` comparisons.
+## Allocations
+
+The [allocation tests](allocation_test.go) check zero allocations per run for selected preconstructed rules with prepared inputs and non-allocating callbacks. This is not a guarantee for every rule or input. Standard-library matching and parsing in `Match` and `Time` may allocate, as may failure reporting.
 
 ## Test
 
